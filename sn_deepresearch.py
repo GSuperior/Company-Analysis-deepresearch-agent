@@ -388,6 +388,8 @@ def scout_agent(client: SenseNovaClient, tool_manager: ToolManager,
         "duration_ms": result["duration_ms"],
         "input_summary": f"主题:{truncate(query, 50)}",
         "output_summary": f"推荐档位:{briefing.get('recommended_mode', 'unknown')}",
+        "input_text": f"[System Prompt]\n{SCOUT_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}",
+        "output_text": content,
     }
 
 
@@ -496,12 +498,19 @@ def planner_agent(client: SenseNovaClient, tool_manager: ToolManager,
     content = result["content"].strip()
     plan = _parse_json_safe(content, _generate_fallback_plan(company_name, dim_count))
 
+    # 构建完整输入文本
+    full_input = f"[System Prompt]\n{PLANNER_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}"
+
     return {
         "plan": plan,
         "tool_calls_history": result["tool_calls_history"],
         "duration_ms": result["duration_ms"],
         "input_summary": f"公司:{company_name}, 档位:{depth}, 维度数:{dim_count}",
         "output_summary": truncate(json.dumps(plan, ensure_ascii=False), 200),
+        "input_text": f"[System Prompt]\n{PLANNER_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}",
+        "output_text": content,
+        "input_text": full_input,
+        "output_text": content,
     }
 
 
@@ -671,6 +680,8 @@ def researcher_agent(client: SenseNovaClient, tool_manager: ToolManager,
         "duration_ms": result["duration_ms"],
         "input_summary": f"维度:{dim_name}, 公司:{company_name}",
         "output_summary": f"Claims:{len(evidence.get('claims', []))}, Sources:{len(evidence.get('sources', []))}",
+        "input_text": f"[System Prompt]\n{RESEARCHER_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}",
+        "output_text": content,
     }
 
 
@@ -821,6 +832,8 @@ Evidence 内容：
             "duration_ms": result.get("duration_ms", 0),
             "input_summary": f"维度:{dim_name}",
             "output_summary": f"结论:{review.get('verdict', 'unknown')}, 评分:{review.get('overall_score', 0)}",
+            "input_text": f"[System Prompt]\n{REVIEWER_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}",
+            "output_text": content,
         }
     except RuntimeError as e:
         logger.error(f"Reviewer agent failed: {e}")
@@ -987,6 +1000,8 @@ def report_planner_agent(client: SenseNovaClient, company_name: str,
             "duration_ms": result.get("duration_ms", 0),
             "input_summary": f"公司:{company_name}, 维度数:{len(all_evidence)}",
             "output_summary": f"章节数:{len(outline.get('sections', []))}",
+            "input_text": f"[System Prompt]\n{REPORT_PLANNER_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}",
+            "output_text": content,
         }
     except RuntimeError as e:
         logger.error(f"ReportPlanner agent failed: {e}")
@@ -1163,6 +1178,8 @@ def report_writer_agent(client: SenseNovaClient, company_name: str,
             "duration_ms": result.get("duration_ms", 0),
             "input_summary": f"公司:{company_name}, 章节数:{len(outline.get('sections', []))}",
             "output_summary": f"报告长度:{len(report)}字",
+            "input_text": f"[System Prompt]\n{REPORT_WRITER_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}",
+            "output_text": report,
         }
     except RuntimeError as e:
         logger.error(f"ReportWriter agent failed: {e}")
@@ -1317,6 +1334,8 @@ def fact_checker_agent(client: SenseNovaClient, tool_manager: ToolManager,
         "duration_ms": result["duration_ms"],
         "input_summary": f"公司:{company_name}, 模式:{mode}",
         "output_summary": f"可信度:{fc_result.get('overall_confidence', 'unknown')}",
+        "input_text": f"[System Prompt]\n{FACT_CHECKER_SYSTEM_PROMPT}\n\n[User Prompt]\n{user_prompt}",
+        "output_text": content,
     }
 
 
@@ -1498,6 +1517,8 @@ def run_sn_deepresearch(api_key: str, company_name: str, depth: str,
                 "step": step,
                 "status": "success",
                 "output_summary": scout_result["output_summary"],
+            "input_text": scout_result.get("input_text", ""),
+            "output_text": scout_result.get("output_text", ""),
             })
         except Exception as e:
             logger.error(f"Scout failed: {e}")
@@ -1590,6 +1611,8 @@ def run_sn_deepresearch(api_key: str, company_name: str, depth: str,
                 "step": step,
                 "status": "success",
                 "output_summary": research_result["output_summary"],
+            "input_text": research_result.get("input_text", ""),
+            "output_text": research_result.get("output_text", ""),
             })
         except Exception as e:
             logger.error(f"Researcher failed for {dim_name}: {e}")
@@ -1633,6 +1656,8 @@ def run_sn_deepresearch(api_key: str, company_name: str, depth: str,
                     "step": step,
                     "status": "success",
                     "output_summary": review_result["output_summary"],
+            "input_text": review_result.get("input_text", ""),
+            "output_text": review_result.get("output_text", ""),
                 })
             except Exception as e:
                 logger.error(f"Reviewer failed for {dim_name}: {e}")
@@ -1662,6 +1687,8 @@ def run_sn_deepresearch(api_key: str, company_name: str, depth: str,
                 "step": step,
                 "status": "success",
                 "output_summary": rp_result["output_summary"],
+            "input_text": rp_result.get("input_text", ""),
+            "output_text": rp_result.get("output_text", ""),
             })
         except Exception as e:
             logger.error(f"ReportPlanner failed: {e}")
@@ -1694,6 +1721,8 @@ def run_sn_deepresearch(api_key: str, company_name: str, depth: str,
             "step": step,
             "status": "success",
             "output_summary": writer_result["output_summary"],
+            "input_text": writer_result.get("input_text", ""),
+            "output_text": writer_result.get("output_text", ""),
         })
     except Exception as e:
         logger.error(f"ReportWriter failed: {e}")
@@ -1741,6 +1770,8 @@ def run_sn_deepresearch(api_key: str, company_name: str, depth: str,
                 "step": step,
                 "status": "success",
                 "output_summary": fc_result["output_summary"],
+            "input_text": fc_result.get("input_text", ""),
+            "output_text": fc_result.get("output_text", ""),
             })
         except Exception as e:
             logger.error(f"FactChecker failed: {e}")

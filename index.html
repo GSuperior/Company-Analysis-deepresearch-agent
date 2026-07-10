@@ -2315,11 +2315,18 @@ input { font-family: inherit; outline: none; border: none; }
         addLog(logEntry);
         appendAgentLog(agent, logEntry);
 
-        if (data.output_summary) {
-            saveAgentDetail(agent, { output: data.output_summary });
+        // 优先使用完整的输出文本，没有时用摘要
+        const outputText = data.output_text || data.output_summary;
+        if (outputText) {
+            saveAgentDetail(agent, { output: outputText });
             if (!state.selectedAgent) {
-                updateOutputDetail(AGENT_NAMES[agent] || agent, data.output_summary);
+                updateOutputDetail(AGENT_NAMES[agent] || agent, outputText);
             }
+        }
+
+        // 如果有完整的输入文本，也更新一下（覆盖之前的摘要）
+        if (data.input_text) {
+            saveAgentDetail(agent, { input: data.input_text });
         }
     }
 
