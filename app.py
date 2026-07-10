@@ -497,10 +497,13 @@ def research_result(task_id: str):
 
     if task["status"] == "completed":
         result = task["result"]
+        # 兼容两种模式的键名：classic模式用report，sn模式用final_report
+        report_text = result.get("final_report") or result.get("report", "")
+        summary_text = result.get("executive_summary") or result.get("summary", "")
         response["result"] = {
-            "summary": result.get("summary", ""),
+            "summary": summary_text,
             "key_metrics": result.get("key_metrics", []),
-            "report": result.get("report", ""),
+            "report": report_text,
             "logs": result.get("logs", []),
             "total_duration_ms": result.get("total_duration_ms", 0),
             "review": result.get("review", {}),
