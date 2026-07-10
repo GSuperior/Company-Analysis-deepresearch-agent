@@ -10,6 +10,8 @@
     }
   ],
   "routes": [
+    { "src": "/", "dest": "app.py" },
+    { "src": "/index.html", "dest": "app.py" },
     { "src": "/api/health", "dest": "app.py" },
     { "src": "/api/research", "dest": "app.py" },
     { "src": "/api/research/(.*)", "dest": "app.py" },
