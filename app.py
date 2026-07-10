@@ -46,6 +46,30 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 # Vercel 需要的 WSGI application 变量
 application = app
 
+
+# ============================================================
+# 静态页面路由
+# ============================================================
+
+@app.route("/")
+@app.route("/index.html")
+def index():
+    """
+    首页 - 返回前端页面
+
+    优先从 public/ 目录读取，兼容 Vercel 静态文件服务和 Flask 直接服务两种模式
+    """
+    # 尝试多个可能的 index.html 路径
+    possible_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "public", "index.html"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html"),
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+    return "<h1>DeepResearch Agent</h1><p>页面文件未找到</p>", 404
+
 # ============================================================
 # 全局任务存储（内存字典）
 # ============================================================
