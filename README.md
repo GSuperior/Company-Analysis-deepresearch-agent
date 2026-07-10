@@ -1,11 +1,11 @@
-# DeepResearch Agent v2 · 多智能体深度研究系统
+# DeepResearch Agent · 多智能体深度研究系统
 
-基于 SenseNova API 的多 Agent 企业深度研究工具，真实调用大模型 + function calling，完整展示 5 个 Agent 的协作流程，一键部署到 Vercel。
+基于 SenseNova API 的多 Agent 企业深度研究工具，真实调用大模型 + function calling，完整展示 5 个 Agent 的协作流程，零配置部署到 Vercel。
 
 ## 功能特性
 
 - **5 个 Agent 协同工作**：Planner → Researcher (×N) → Writer → Reviewer ↔ FactChecker
-- **合理的工具配置**：每个 Agent 的工具配置与其角色匹配（需要信息的 Agent 配备搜索工具）
+- **合理的工具配置**：每个 Agent 的工具配置与其角色匹配
 - **动态研究维度**：根据公司特点生成 3-7 个研究维度
 - **质量审核闭环**：初稿 → 审核 → 修改 → 终稿（支持多轮迭代）
 - **事实核查机制**：自动提取关键数据点，搜索验证并标注可信度
@@ -14,6 +14,33 @@
 - **流程可视化**：实时展示每个 Agent 的状态、输入输出、工具调用
 - **优雅降级**：每个环节都有 fallback 机制，确保流程不中断
 - **总超时保护**：10分钟总超时，防止任务无限运行
+
+## 快速开始
+
+### 本地运行
+
+```bash
+pip install -r requirements.txt
+python app.py
+# 打开 http://localhost:5000/index.html
+```
+
+### 部署到 Vercel
+
+**零配置部署**：直接将代码推送到 GitHub，在 Vercel 中 Import 仓库即可。
+
+Vercel 会自动识别 Flask 应用，无需额外配置。
+
+```
+项目结构：
+├── app.py              # Flask 入口（Vercel 自动检测）
+├── requirements.txt    # Python 依赖
+├── public/
+│   └── index.html      # 前端页面（静态资源）
+├── agent_system.py     # Agent 系统
+├── tools.py            # 工具定义
+└── vercel.json         # 函数超时配置（可选）
+```
 
 ## Agent 架构
 
@@ -25,7 +52,7 @@
 | **Researcher** | 信息检索专家 | `web_search`, `company_lookup`, `financial_data` | 调研是核心环节，需要多种信息获取工具 |
 | **Writer** | 资深行业研究员 | 无 | 写作是整合工作，信息来自调研结果 |
 | **Reviewer** | 质量审核专家 | 无 | 审核逻辑/结构/可读性，数据准确性由 FactChecker 专门负责 |
-| **FactChecker** | 事实核查员 | `web_search` | 事实核查必须有外部验证能力，否则名不副实 |
+| **FactChecker** | 事实核查员 | `web_search` | 事实核查必须有外部验证能力 |
 
 ### 研究流程
 
@@ -60,27 +87,6 @@
 | standard | 5 | 1轮 | LLM核查+多次搜索验证 | ~3分钟 |
 | deep | 7 | 2轮 | 全量核查+交叉验证 | ~5分钟 |
 
-## 项目结构
-
-```
-research-agent-v2/
-├── api/
-│   ├── [...path].py       # Vercel catch-all 入口（捕获所有 /api/* 请求）
-│   ├── index.py            # Flask 应用主入口
-│   ├── agent_system.py     # Agent 系统核心（5个Agent + 编排器）
-│   ├── tools.py            # 工具定义（web_search / company_lookup / financial_data）
-│   └── requirements.txt    # Python 依赖（Vercel 读取此文件）
-├── index.html              # 前端页面（Vercel自动服务静态文件）
-├── vercel.json             # Vercel 配置（rewrites + 函数超时 + CORS头）
-├── .gitignore
-└── README.md
-```
-
-> **Vercel 部署说明**：
-> - `api/[...path].py` 是 catch-all Serverless Function，捕获所有 `/api/*` 请求
-> - 根目录的 `index.html` 等静态文件由 Vercel 自动服务
-> - Python 依赖由 `api/requirements.txt` 管理
-
 ## API 端点
 
 | 方法 | 路径 | 说明 |
@@ -94,7 +100,7 @@ research-agent-v2/
 ### 启动研究
 
 ```bash
-curl -X POST http://localhost:5000/api/research \
+curl -X POST https://your-domain.vercel.app/api/research \
   -H "Content-Type: application/json" \
   -d '{
     "company_name": "商汤科技",
@@ -119,42 +125,12 @@ curl -X POST http://localhost:5000/api/research \
 | `error` | 错误信息 |
 | `ping` | 心跳保活 |
 
-## 快速开始
-
-### 本地运行
-
-```bash
-# 安装依赖
-pip install -r api/requirements.txt
-
-# 启动服务
-python api/index.py
-
-# 打开浏览器访问
-# http://localhost:5000/index.html
-```
-
-### 部署到 Vercel
-
-1. 将代码推送到 GitHub 仓库
-2. 打开 [vercel.com](https://vercel.com) → New Project → 选择仓库
-3. Framework Preset 选 **Other**，其他保持默认
-4. 点击 Deploy，等待 1-2 分钟完成
-5. 打开分配的域名即可使用
-
-**Vercel 部署注意事项**：
-
-- Hobby（免费）：函数执行时间 10 秒，SSE 会频繁断开，前端会自动重连 + 轮询降级
-- Pro：300 秒，可完成 basic/standard 深度研究
-- Serverless 是无状态的，任务存在内存中，实例切换可能丢失
-- 生产环境建议使用 Redis/Vercel KV 等外部存储
-
 ## 技术栈
 
 - **后端**：Python 3 + Flask + SenseNova API
 - **前端**：原生 HTML/CSS/JS（单文件，零构建）
 - **AI 模型**：商汤 SenseNova（sensenova-6.7-flash-lite）
-- **部署**：Vercel Serverless Functions（catch-all 路由）
+- **部署**：Vercel 零配置 Flask 部署
 - **通信**：SSE (Server-Sent Events) + 轮询降级
 
 ## 代码质量
