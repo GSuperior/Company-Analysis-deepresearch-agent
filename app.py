@@ -1,12 +1,17 @@
 """
 多Agent深度研究系统 - Flask 应用入口（Vercel 零配置部署）
 
-5个API端点：
+包含两套 Agent 系统：
+- classic: 自研多 Agent 系统（Planner/Researcher/Writer/Reviewer/FactChecker）
+- sn-deepresearch: 基于 sn-deep-research 设计思想的复刻版
+
+API 端点：
 - GET  /api/health - 健康检查
 - POST /api/research - 启动研究任务
 - GET  /api/research/<id>/stream - SSE实时流
 - GET  /api/research/<id>/result - 获取研究结果
 - GET  /api/tasks - 任务列表（调试用）
+- GET  /api/models - 可用模型列表
 
 部署方式：Vercel 零配置 Flask 部署
 - 根目录的 app.py 会被 Vercel 自动识别
@@ -28,6 +33,7 @@ from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 
 from agent_system import ResearchOrchestrator
+from sn_deepresearch import run_sn_deepresearch, create_task as sn_create_task, get_task as sn_get_task, update_task as sn_update_task, add_event as sn_add_event, list_tasks as sn_list_tasks
 
 # 配置日志
 logging.basicConfig(
@@ -35,6 +41,25 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("api")
+
+# ============================================================
+# 可用模型配置
+# ============================================================
+
+AVAILABLE_MODELS = [
+    {
+        "id": "sensenova-6.7-flash-lite",
+        "name": "SenseNova 6.7 Flash Lite",
+        "description": "轻量快速版，适合日常使用",
+        "default": True,
+    },
+    {
+        "id": "sensenova-6.7-flash",
+        "name": "SenseNova 6.7 Flash",
+        "description": "标准版，平衡速度和质量",
+        "default": False,
+    },
+]
 
 # ============================================================
 # Flask 应用初始化
@@ -136,11 +161,28 @@ def health_check():
     return jsonify({
         "status": "ok",
         "timestamp": datetime.now().isoformat(),
-        "version": "2.1.0",
+        "version": "3.0.0",
         "total_tasks": task_count,
         "running_tasks": running_count,
-        "agents": ["planner", "researcher", "writer", "reviewer", "fact_checker"],
+        "agents": {
+            "classic": ["planner", "researcher", "writer", "reviewer", "fact_checker"],
+            "sn-deepresearch": ["scout", "planner", "researcher", "reviewer", "report_planner", "report_writer", "fact_checker"],
+        },
         "deployment": "vercel-serverless",
+    })
+
+
+@app.route("/api/models", methods=["GET"])
+def get_models():
+    """
+    获取可用模型列表
+
+    Returns:
+        可用模型列表
+    """
+    return jsonify({
+        "models": AVAILABLE_MODELS,
+        "default_model": "sensenova-6.7-flash-lite",
     })
 
 
@@ -151,8 +193,12 @@ def start_research():
 
     Request Body:
         company_name: 公司名称
-        depth: 研究深度 (basic/standard/deep)
-        api_key: SenseNova API Key（可选，也可通过环境变量配置）
+        depth: 研究深度
+               - classic模式: basic/standard/deep
+               - sn-deepresearch模式: quick/normal/heavy
+        api_key: SenseNova API Key
+        agent_mode: 代理模式 (classic / sn-deepresearch)，默认 classic
+        model: 模型名称，默认 sensenova-6.7-flash-lite
 
     Returns:
         任务ID和状态信息
@@ -160,15 +206,39 @@ def start_research():
     data = request.get_json(force=True, silent=True) or {}
 
     company_name = (data.get("company_name") or "").strip()
-    depth = (data.get("depth") or "basic").strip().lower()
+    depth = (data.get("depth") or "").strip().lower()
     api_key = (data.get("api_key") or "").strip()
+    agent_mode = (data.get("agent_mode") or "classic").strip().lower()
+    model = (data.get("model") or "").strip()
 
     # 参数校验
     if not company_name:
         return jsonify({"error": "公司名称不能为空"}), 400
 
-    if depth not in ("basic", "standard", "deep"):
-        return jsonify({"error": "深度参数必须是 basic, standard 或 deep"}), 400
+    # 校验 agent_mode
+    if agent_mode not in ("classic", "sn-deepresearch"):
+        return jsonify({"error": "agent_mode 必须是 classic 或 sn-deepresearch"}), 400
+
+    # 根据模式校验 depth
+    if agent_mode == "classic":
+        valid_depths = ("basic", "standard", "deep")
+        if not depth:
+            depth = "basic"
+    else:
+        valid_depths = ("quick", "normal", "heavy")
+        if not depth:
+            depth = "normal"
+
+    if depth not in valid_depths:
+        return jsonify({"error": f"depth 参数必须是 {', '.join(valid_depths)}"}), 400
+
+    # 校验 model
+    if not model:
+        model = "sensenova-6.7-flash-lite"
+    valid_model_ids = [m["id"] for m in AVAILABLE_MODELS]
+    if model not in valid_model_ids:
+        # 允许自定义模型名（用户可能有其他模型）
+        pass
 
     # 优先使用请求中的API Key，其次使用环境变量
     if not api_key:
@@ -194,24 +264,26 @@ def start_research():
         "id": task_id,
         "company_name": company_name,
         "depth": depth,
+        "agent_mode": agent_mode,
+        "model": model,
         "status": "running",
         "api_key_masked": mask_api_key(api_key),
         "created_at": time.time(),
         "result": None,
         "error": None,
-        "events": [],  # 事件列表（用于重连）
-        "event_queue": queue.Queue(),  # 实时事件队列
+        "events": [],
+        "event_queue": queue.Queue(),
     }
 
     with tasks_lock:
         tasks[task_id] = task
 
-    logger.info(f"Research task created: {task_id}, company={company_name}, depth={depth}")
+    logger.info(f"Research task created: {task_id}, company={company_name}, depth={depth}, mode={agent_mode}, model={model}")
 
     # 后台线程执行研究任务
     def run_research():
         try:
-            logger.info(f"Task {task_id}: Starting research for '{company_name}' with depth '{depth}'")
+            logger.info(f"Task {task_id}: Starting research for '{company_name}' with depth '{depth}', mode '{agent_mode}'")
 
             def event_callback(event_type: str, event_data: dict):
                 event = {
@@ -223,15 +295,27 @@ def start_research():
                     task["events"].append(event)
                 task["event_queue"].put(event)
 
-            # 执行研究
-            orchestrator = ResearchOrchestrator()
-            result = orchestrator.run(
-                company_name=company_name,
-                depth=depth,
-                api_key=api_key,
-                event_callback=event_callback,
-                total_timeout=TOTAL_TIMEOUT,
-            )
+            # 根据模式执行不同的研究流程
+            if agent_mode == "classic":
+                # 经典自研模式
+                orchestrator = ResearchOrchestrator()
+                result = orchestrator.run(
+                    company_name=company_name,
+                    depth=depth,
+                    api_key=api_key,
+                    model=model,
+                    event_callback=event_callback,
+                    total_timeout=TOTAL_TIMEOUT,
+                )
+            else:
+                # SN-DeepResearch 模式
+                result = run_sn_deepresearch(
+                    api_key=api_key,
+                    company_name=company_name,
+                    depth=depth,
+                    model=model,
+                    emit=event_callback,
+                )
 
             # 保存结果
             with tasks_lock:
@@ -243,13 +327,15 @@ def start_research():
             complete_event = {
                 "type": "complete",
                 "data": {
-                    "report": result.get("report", ""),
-                    "summary": result.get("summary", ""),
+                    "report": result.get("final_report", result.get("report", "")),
+                    "summary": result.get("executive_summary", result.get("summary", "")),
                     "key_metrics": result.get("key_metrics", []),
                     "logs": result.get("logs", []),
                     "total_duration_ms": result.get("total_duration_ms", 0),
                     "review": result.get("review", {}),
                     "fact_check": result.get("fact_check", {}),
+                    "agent_mode": agent_mode,
+                    "model": model,
                 },
                 "timestamp": datetime.now().isoformat(),
             }
@@ -267,7 +353,6 @@ def start_research():
                 task["error"] = str(e)
                 task["completed_at"] = time.time()
 
-            # 发送错误事件
             error_event = {
                 "type": "error",
                 "data": {"message": str(e)},
@@ -286,6 +371,8 @@ def start_research():
         "task_id": task_id,
         "company_name": company_name,
         "depth": depth,
+        "agent_mode": agent_mode,
+        "model": model,
         "status": "running",
         "message": "研究任务已启动",
     }), 201

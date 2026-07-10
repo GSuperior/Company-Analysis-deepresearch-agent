@@ -1,17 +1,33 @@
 """
-多Agent深度研究系统 - 核心Agent系统模块
+多Agent深度研究系统 - 基于 sn-deep-research 设计思想
 
-包含5个Agent + 编排器：
-- Planner (研究总监): web_search - 制定研究计划
-- Researcher (信息检索专家): web_search, company_lookup, financial_data - 多维度调研
-- Writer (资深行业研究员): 无工具 - 撰写报告
-- Reviewer (质量审核专家): 无工具 - 审核报告质量
-- FactChecker (事实核查员): web_search - 验证关键数据
+参考 SenseNova Skills 生态的 sn-deep-research 深度研究技能设计，
+实现精简版的多 Agent 协作流水线。
+
+Agent 流水线（对齐 sn-deep-research）：
+  1. Scout      - 预研侦察兵：快速了解 + 档位推荐
+  2. Planner    - 研究规划师：维度拆解 + 关键问题设计
+  3. Researcher - 信息取证专家：按维度取证，输出标准化 evidence
+  4. Reviewer   - 质量审查员：子报告审查 + 缺口识别
+  5. ReportPlanner - 报告规划师：大纲编排 + 证据分配
+  6. Writer     - 报告撰写师：基于 evidence 撰写全文
+  7. FactChecker - 事实核查员：关键数据验证 + 可信度评估
+
+工具配置（遵循 sn-deep-research 设计原则）：
+- 需要信息获取的 Agent 配备搜索工具
+- 纯分析/写作的 Agent 不直接调用工具
+- 取证角色有专业搜索技能，写作角色只读 evidence 边界
+
+三档模式（对齐 sn-deep-research）：
+- quick  : 单维度 skim → 单 writer → 快速出稿
+- normal : scout → plan → 多维度 research + review → report plan → writer → 终审
+- heavy  : normal 基础上增加视角分析、补研循环、多节并行写作
 
 设计原则：
-- 每个Agent的工具配置合理：需要信息的Agent必须有搜索工具
-- 流转机制清晰：明确的输入输出、错误处理、降级方案
-- 代码质量：结构清晰、注释完善、错误处理完善
+- Controller 只调度，不读大文件（通过结构化数据传递）
+- 证据与写作分离（evidence → outline → report）
+- Schema 硬门禁（每个阶段输出格式校验）
+- 优雅降级（每环节都有 fallback）
 """
 
 import json
@@ -256,31 +272,50 @@ class SenseNovaClient:
 
 
 # ============================================================
-# 深度配置
+# 深度配置（对齐 sn-deep-research 档位）
 # ============================================================
 
 DEPTH_CONFIG = {
-    "basic": {
-        "dimension_count": 3,
-        "review_modify_rounds": 0,   # 仅审核，不修改
-        "fact_check_mode": "basic",  # 基础版（规则提取+1次搜索验证）
-        "research_iterations": 1,    # 每个维度搜索次数
-        "estimated_duration": "约90秒",
+    "quick": {
+        "label": "快速调研",
+        "dimension_count": 1,
+        "has_scout": False,
+        "has_sub_report_review": False,
+        "has_report_planner": False,
+        "fact_check_mode": "basic",
+        "research_iterations": 1,
+        "final_review": False,
+        "estimated_duration": "约30秒",
     },
-    "standard": {
-        "dimension_count": 5,
-        "review_modify_rounds": 1,   # 审核+修改1轮
-        "fact_check_mode": "llm",    # LLM核查+多次搜索验证
+    "normal": {
+        "label": "标准研究",
+        "dimension_count": 4,
+        "has_scout": True,
+        "has_sub_report_review": True,
+        "has_report_planner": True,
+        "fact_check_mode": "llm",
         "research_iterations": 2,
+        "final_review": True,
         "estimated_duration": "约3分钟",
     },
-    "deep": {
-        "dimension_count": 7,
-        "review_modify_rounds": 2,   # 审核+修改2轮
-        "fact_check_mode": "full",   # 全量核查+交叉验证
+    "heavy": {
+        "label": "深度研究",
+        "dimension_count": 6,
+        "has_scout": True,
+        "has_sub_report_review": True,
+        "has_report_planner": True,
+        "fact_check_mode": "full",
         "research_iterations": 3,
-        "estimated_duration": "约5分钟",
+        "final_review": True,
+        "estimated_duration": "约6分钟",
     },
+}
+
+# 兼容旧的档位名称（向后兼容）
+DEPTH_ALIASES = {
+    "basic": "quick",
+    "standard": "normal",
+    "deep": "heavy",
 }
 
 # 所有可用的研究维度（按优先级排序）
@@ -296,69 +331,195 @@ ALL_DIMENSIONS = [
 
 
 # ============================================================
-# Agent 1: Planner - 研究总监
+# Agent 0: Scout - 预研侦察兵
 # ============================================================
+# 对应 sn-deep-research 中的 scout agent
+# 作用：快速了解目标，推荐档位，产出 briefing
 
-PLANNER_SYSTEM_PROMPT = """你是资深研究总监，负责制定公司深度研究计划。
-你的任务是根据公司名称和研究深度，制定一份结构化、高质量的研究计划。
+SCOUT_SYSTEM_PROMPT = """你是深度研究的预研侦察兵（Scout）。
+
+你的任务是：在正式研究开始前，快速扫描目标公司的基本情况，
+评估研究复杂度，并推荐合适的研究档位。
 
 工作流程：
-1. 首先使用 web_search 工具快速了解目标公司的基本情况
-2. 根据公司特点和研究深度，设计合理的研究维度
-3. 为每个维度设计2-3个关键问题，确保研究全面且有深度
+1. 使用 web_search 快速搜索目标公司的基本信息
+2. 基于搜索结果，判断研究复杂度（涉及多少维度、是否需要多源验证）
+3. 推荐合适的档位并说明理由
 
-输出要求：
-- 以严格的JSON格式输出，不要包含任何其他文字
-- 研究维度应根据公司特点定制，不要千篇一律
-- 关键问题要具体、有深度，能够指导调研工作
-
-输出格式示例：
+输出要求（严格JSON格式）：
 {
-  "plan_name": "XX公司深度研究计划",
-  "company_profile": "公司的一句话定位描述",
+  "company_profile": "公司一句话定位",
+  "industry": "所属行业",
+  "complexity_assessment": "复杂度评估说明",
+  "recommended_mode": "quick|normal|heavy",
+  "mode_rationale": "推荐该档位的理由",
+  "key_attention_points": ["需要重点关注的点1", "需要重点关注的点2"]
+}
+
+档位选择标准：
+- quick：单一维度即可覆盖，单一权威来源可定论（如仅查某个具体数据点）
+- normal：需要多维度拆解，需要多来源交叉验证（常规公司研究）
+- heavy：话题复杂或重要，涉及多方利益相关者，需要深度分析和多视角（大型企业、行业龙头、争议性话题）
+"""
+
+
+def scout_agent(client: SenseNovaClient, tool_manager: ToolManager,
+                query: str) -> Dict[str, Any]:
+    """
+    Scout Agent - 预研侦察兵
+
+    快速了解目标，推荐档位，产出 briefing。
+
+    Args:
+        client: SenseNova客户端
+        tool_manager: 工具管理器
+        query: 研究主题/公司名
+
+    Returns:
+        {briefing, tool_calls_history, duration_ms, input_summary, output_summary}
+    """
+    user_prompt = f"""请对以下研究主题进行预研侦察：
+
+研究主题：「{query}」
+
+请先使用 web_search 快速了解相关背景，然后评估研究复杂度并推荐档位。
+注意：这是预研阶段，不需要深入研究，只需要快速扫描和判断。
+
+请以严格的JSON格式输出 briefing。"""
+
+    messages = [
+        {"role": "system", "content": SCOUT_SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    def tool_executor(name: str, args_str: str) -> str:
+        return tool_manager.execute_tool(name, args_str, query)
+
+    # Scout 使用 web_search 工具
+    tools = tool_manager.get_tool_schemas(["web_search"])
+
+    result = client.chat_with_tools(
+        messages,
+        tools=tools,
+        tool_executor=tool_executor,
+        max_iter=2,
+        temperature=0.5,
+        max_tokens=1500,
+    )
+
+    # 解析JSON
+    content = result["content"].strip()
+    briefing = _parse_json_safe(content, _generate_fallback_briefing(query))
+
+    return {
+        "briefing": briefing,
+        "tool_calls_history": result["tool_calls_history"],
+        "duration_ms": result["duration_ms"],
+        "input_summary": f"主题:{truncate(query, 50)}",
+        "output_summary": f"推荐档位:{briefing.get('recommended_mode', 'unknown')}",
+    }
+
+
+def _generate_fallback_briefing(query: str) -> Dict[str, Any]:
+    """生成保底 briefing"""
+    return {
+        "company_profile": f"{query}相关企业",
+        "industry": "待确认",
+        "complexity_assessment": "预研失败，使用默认评估",
+        "recommended_mode": "normal",
+        "mode_rationale": "默认使用 normal 档位",
+        "key_attention_points": ["公司基本信息", "业务发展情况"],
+    }
+
+
+# ============================================================
+# Agent 1: Planner - 研究规划师
+# ============================================================
+
+PLANNER_SYSTEM_PROMPT = """你是研究规划师（Plan Agent），负责制定深度研究计划。
+
+你的任务是根据公司名称、研究档位和预研 briefing，设计结构化的研究计划。
+
+参考 sn-deep-research 的 plan 设计理念：
+1. 维度拆解要合理，覆盖全面但不冗余
+2. 每个维度要有明确的关键问题（key_questions）
+3. 每个维度要标注建议的信息来源类别
+4. 维度之间有逻辑递进关系（从概况到深入分析）
+
+输出要求（严格JSON格式）：
+{
+  "plan_name": "研究计划名称",
+  "company_profile": "公司一句话定位",
+  "research_objective": "研究目标说明",
   "dimensions": [
     {
-      "name": "公司概况",
-      "key_questions": ["公司的基本情况和发展历程是什么？", "公司的组织架构和核心团队如何？"]
+      "id": "d1",
+      "name": "维度名称",
+      "description": "维度说明",
+      "key_questions": ["关键问题1", "关键问题2"],
+      "focus": "研究重点方向",
+      "suggested_sources": ["通用搜索", "财经数据", ...],
+      "depth_level": "skim|standard|deep"
     }
   ]
 }
+
+注意：
+- 维度ID按 d1, d2, d3... 编号
+- depth_level: skim(快速), standard(标准), deep(深入)
+- suggested_sources 从以下选择：通用搜索、企业信息、财经数据、行业报告、新闻资讯、社媒讨论
 """
 
 
 def planner_agent(client: SenseNovaClient, tool_manager: ToolManager,
-                  company_name: str, depth: str) -> Dict[str, Any]:
+                  company_name: str, depth: str,
+                  briefing: Optional[Dict] = None) -> Dict[str, Any]:
     """
-    规划阶段 Agent - 研究总监
+    Planner Agent - 研究规划师
 
-    使用 web_search 工具快速了解公司，然后制定研究计划。
+    制定研究计划，拆解研究维度，设计关键问题。
+    对应 sn-deep-research 中的 plan agent。
 
     Args:
         client: SenseNova客户端
         tool_manager: 工具管理器
         company_name: 公司名称
-        depth: 研究深度
+        depth: 研究深度 (quick/normal/heavy)
+        briefing: 预研 briefing（可选）
 
     Returns:
         {plan, tool_calls_history, duration_ms, input_summary, output_summary}
     """
-    config = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["basic"])
+    # 解析档位（支持别名兼容）
+    actual_depth = DEPTH_ALIASES.get(depth, depth)
+    config = DEPTH_CONFIG.get(actual_depth, DEPTH_CONFIG["normal"])
     dim_count = config["dimension_count"]
     dim_names = ALL_DIMENSIONS[:dim_count]
     dim_desc = "、".join(dim_names)
 
-    user_prompt = f"""请为「{company_name}」制定一份深度研究计划。
+    briefing_context = ""
+    if briefing:
+        briefing_context = f"""
+预研背景（来自 Scout）：
+- 公司定位：{briefing.get('company_profile', '')}
+- 所属行业：{briefing.get('industry', '')}
+- 重点关注：{', '.join(briefing.get('key_attention_points', []))}
+"""
 
-研究深度：{depth}（共{dim_count}个研究维度）
+    user_prompt = f"""请为「{company_name}」制定深度研究计划。
+
+研究档位：{actual_depth}（共{dim_count}个研究维度）
 建议维度方向：{dim_desc}
+{briefing_context}
 
-请先使用 web_search 工具快速了解这家公司的基本情况，然后基于你的理解，
-为每个维度设计2-3个具体、有深度的关键问题。
+请先使用 web_search 快速了解这家公司的最新情况，然后基于你的理解，
+为每个维度设计具体的关键问题和研究重点。
 
 注意：
-1. 维度名称可以根据公司特点适当调整，但数量应保持为{dim_count}个
-2. 关键问题要具体，避免空泛
-3. 请严格以JSON格式输出研究计划"""
+1. 维度数量保持为{dim_count}个，但名称和顺序可根据公司特点调整
+2. 关键问题要具体、有深度，能够指导调研工作
+3. 每个维度标注建议的信息来源类别
+4. 请严格以JSON格式输出研究计划"""
 
     messages = [
         {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
@@ -1267,7 +1428,7 @@ class ResearchOrchestrator:
 
     def run(self, company_name: str, depth: str, api_key: str,
             event_callback: Optional[Callable[[str, Dict], None]] = None,
-            total_timeout: int = 600) -> Dict[str, Any]:
+            total_timeout: int = 600, model: Optional[str] = None) -> Dict[str, Any]:
         """
         执行完整研究流程
 
@@ -1277,6 +1438,7 @@ class ResearchOrchestrator:
             api_key: API密钥
             event_callback: 事件回调函数 (event_type, data_dict) -> None
             total_timeout: 总超时时间（秒），默认10分钟
+            model: 模型名称（可选）
 
         Returns:
             完整的研究结果字典
@@ -1337,7 +1499,7 @@ class ResearchOrchestrator:
                     input_summary=f"公司:{company_name}, 深度:{depth}",
                     output_summary=f"预计耗时:{config['estimated_duration']}")
 
-            client = SenseNovaClient(api_key)
+            client = SenseNovaClient(api_key, model=model)
             tool_manager = ToolManager()
 
             # =========================================
@@ -1345,7 +1507,8 @@ class ResearchOrchestrator:
             # =========================================
             emit("progress", {"percent": 5, "phase": "planning",
                               "message": "开始制定研究计划..."})
-            emit("agent_start", {"agent": "planner", "phase": "规划阶段"})
+            emit("agent_start", {"agent": "planner", "phase": "规划阶段",
+                                "input_summary": f"公司: {company_name}\n深度: {depth}"})
 
             add_log("planner", "启动规划Agent",
                     input_summary=f"公司:{company_name}, 深度:{depth}")
@@ -1427,6 +1590,7 @@ class ResearchOrchestrator:
                     "dimension": dim_name,
                     "index": i + 1,
                     "total": total_dims,
+                    "input_summary": f"公司: {company_name}\n维度: {dim_name} ({i + 1}/{total_dims})",
                 })
 
                 add_log(
@@ -1479,7 +1643,8 @@ class ResearchOrchestrator:
             # =========================================
             emit("progress", {"percent": 72, "phase": "writing",
                               "message": "开始撰写研究报告..."})
-            emit("agent_start", {"agent": "writer", "phase": "报告撰写阶段"})
+            emit("agent_start", {"agent": "writer", "phase": "报告撰写阶段",
+                                "input_summary": f"公司: {company_name}\n维度数: {len(research_results)}"})
 
             add_log("writer", "启动报告撰写Agent",
                     input_summary=f"维度数:{len(research_results)}")
@@ -1555,6 +1720,7 @@ class ResearchOrchestrator:
                         "phase": f"质量审核 - 第{round_num}轮",
                         "round": round_num,
                         "total_rounds": total_review_rounds,
+                        "input_summary": f"公司: {company_name}\n报告长度: {len(current_report)}字\n轮次: {round_num}/{total_review_rounds}",
                     })
 
                     add_log(
@@ -1601,6 +1767,7 @@ class ResearchOrchestrator:
                             "agent": "writer",
                             "phase": f"报告修改 - 第{round_num}轮",
                             "round": round_num,
+                            "input_summary": f"公司: {company_name}\n报告长度: {len(current_report)}字\n修改轮次: 第{round_num}轮",
                         })
 
                         add_log(
@@ -1650,7 +1817,8 @@ class ResearchOrchestrator:
             # =========================================
             emit("progress", {"percent": 92, "phase": "fact_checking",
                               "message": "进行事实核查..."})
-            emit("agent_start", {"agent": "fact_checker", "phase": "事实核查阶段"})
+            emit("agent_start", {"agent": "fact_checker", "phase": "事实核查阶段",
+                                "input_summary": f"公司: {company_name}\n报告长度: {len(current_report)}字\n核查模式: {config['fact_check_mode']}"})
 
             add_log("fact_checker", "启动事实核查Agent",
                     input_summary=f"模式:{config['fact_check_mode']}, 报告长度:{len(current_report)}字")
