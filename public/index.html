@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多Agent深度研究系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+
+  /* 顶部导航 */
+  .topbar {
+    height: 56px;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 24px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .api-key-input {
+    flex: 1;
+    max-width: 400px;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .api-key-input label { font-size: 13px; color: #94a3b8; white-space: nowrap; }
+  .api-key-input input {
+    flex: 1;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+  }
+  .api-key-input input:focus { outline: none; border-color: #3b82f6; }
+
+  /* 主布局 */
+  .main {
+    display: grid;
+    grid-template-columns: 280px 1fr 360px;
+    grid-template-rows: 1fr auto;
+    height: calc(100vh - 56px);
+    gap: 0;
+  }
+
+  /* 左侧控制面板 */
+  .sidebar-left {
+    background: #1e293b;
+    border-right: 1px solid #334155;
+    padding: 20px;
+    overflow-y: auto;
+  }
+  .panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+  }
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: #cbd5e1;
+    margin-bottom: 6px;
+  }
+  .form-group input, .form-group select {
+    width: 100%;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #e2e8f0;
+    font-size: 14px;
+  }
+  .form-group input:focus, .form-group select:focus { outline: none; border-color: #3b82f6; }
+  .depth-options { display: flex; gap: 8px; }
+  .depth-btn {
+    flex: 1;
+    padding: 8px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #94a3b8;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .depth-btn:hover { border-color: #475569; color: #e2e8f0; }
+  .depth-btn.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: #3b82f6;
+    color: #60a5fa;
+  }
+  .depth-btn .dim-num { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .depth-btn.active .dim-num { color: #60a5fa; }
+
+  .btn-start {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn-start:hover { opacity: 0.9; }
+  .btn-start:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .progress-section { margin-top: 20px; }
+  .progress-bar {
+    height: 8px;
+    background: #334155;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+  .progress-text {
+    font-size: 12px;
+    color: #94a3b8;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .info-card {
+    margin-top: 20px;
+    padding: 12px;
+    background: #0f172a;
+    border-radius: 8px;
+    border: 1px solid #334155;
+  }
+  .info-card h4 { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+  .info-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 4px 0;
+    color: #cbd5e1;
+  }
+  .info-item .label { color: #64748b; }
+
+  /* 中间区域 */
+  .center {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  /* Agent流程可视化 */
+  .flow-visual {
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    padding: 20px 24px;
+    min-height: 160px;
+  }
+  .flow-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 16px;
+  }
+  .flow-nodes {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  .phase-label {
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .agent-node {
+    width: 120px;
+    text-align: center;
+    position: relative;
+  }
+  .agent-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 10px;
+    background: #334155;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+  }
+  .agent-node.active .agent-icon {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: #3b82f6;
+    animation: pulse 1.5s infinite;
+  }
+  .agent-node.done .agent-icon {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: #22c55e;
+  }
+  .agent-node.error .agent-icon {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+  }
+  .agent-name { font-size: 13px; font-weight: 500; color: #e2e8f0; }
+  .agent-desc { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .agent-node.done .agent-name { color: #4ade80; }
+  .agent-node.error .agent-name { color: #f87171; }
+  .flow-arrow {
+    font-size: 20px;
+    color: #475569;
+    margin-bottom: 20px;
+  }
+
+  /* 当前步骤详情 */
+  .step-detail {
+    flex: 1;
+    background: #0f172a;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .step-detail-header {
+    padding: 12px 20px;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .step-detail-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin-left: 20px;
+  }
+  .tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #64748b;
+    cursor: pointer;
+    border-radius: 4px 4px 0 0;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .tab:hover { color: #e2e8f0; }
+  .tab.active { color: #60a5fa; border-bottom-color: #3b82f6; }
+  .tab-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: none;
+  }
+  .tab-content.active { display: block; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h4 {
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .detail-section .content {
+    background: #1e293b;
+    padding: 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: "SF Mono", Monaco, Consolas, "Courier New", monospace;
+  }
+  .tool-call-item {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .tool-call-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .tool-call-name {
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 12px;
+    color: #a78bfa;
+    background: rgba(167, 139, 250, 0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .tool-call-args {
+    font-size: 12px;
+    color: #94a3b8;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    margin-bottom: 6px;
+    padding: 6px 8px;
+    background: #0f172a;
+    border-radius: 4px;
+  }
+  .tool-call-result {
+    font-size: 12px;
+    color: #4ade80;
+    padding: 6px 8px;
+    background: #0f172a;
+    border-radius: 4px;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  /* 右侧日志面板 */
+  .sidebar-right {
+    background: #1e293b;
+    border-left: 1px solid #334155;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .log-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid #334155;
+  }
+  .log-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+  .log-filter {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .filter-chip {
+    padding: 3px 10px;
+    font-size: 11px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .filter-chip:hover { color: #e2e8f0; border-color: #475569; }
+  .filter-chip.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: #3b82f6;
+    color: #60a5fa;
+  }
+  .log-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .log-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    border-left: 3px solid transparent;
+    transition: background 0.15s;
+  }
+  .log-item:hover { background: rgba(59, 130, 246, 0.08); }
+  .log-item.selected {
+    background: rgba(59, 130, 246, 0.12);
+    border-left-color: #3b82f6;
+  }
+  .log-item-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .log-step {
+    font-size: 10px;
+    color: #475569;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    min-width: 24px;
+  }
+  .log-agent {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .log-agent.planner { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+  .log-agent.researcher { background: rgba(167, 139, 250, 0.15); color: #a78bfa; }
+  .log-agent.writer { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+  .log-agent.system { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+  .log-action { font-size: 12px; color: #e2e8f0; flex: 1; }
+  .log-time {
+    font-size: 10px;
+    color: #475569;
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+  }
+  .log-summary {
+    font-size: 11px;
+    color: #64748b;
+    padding-left: 32px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .log-duration {
+    font-size: 10px;
+    color: #64748b;
+    margin-left: auto;
+  }
+
+  /* 底部报告区 */
+  .report-panel {
+    grid-column: 1 / -1;
+    background: #1e293b;
+    border-top: 1px solid #334155;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  .report-panel.expanded { max-height: 60vh; }
+  .report-header {
+    padding: 12px 24px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+  .report-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .report-toggle-icon { transition: transform 0.3s; font-size: 12px; }
+  .report-panel.expanded .report-toggle-icon { transform: rotate(180deg); }
+  .report-actions { display: flex; gap: 8px; }
+  .btn-small {
+    padding: 6px 14px;
+    background: #334155;
+    border: none;
+    border-radius: 6px;
+    color: #cbd5e1;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-small:hover { background: #475569; }
+  .btn-small.primary { background: #3b82f6; color: white; }
+  .btn-small.primary:hover { background: #2563eb; }
+  .report-content {
+    padding: 20px 24px;
+    overflow-y: auto;
+    max-height: calc(60vh - 48px);
+  }
+  .report-content h1 { font-size: 22px; color: #f1f5f9; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #334155; }
+  .report-content h2 { font-size: 18px; color: #e2e8f0; margin-top: 20px; margin-bottom: 10px; }
+  .report-content h3 { font-size: 15px; color: #cbd5e1; margin-top: 16px; margin-bottom: 8px; }
+  .report-content p { margin-bottom: 10px; color: #94a3b8; line-height: 1.7; }
+  .report-content ul, .report-content ol { margin-left: 20px; margin-bottom: 10px; color: #94a3b8; }
+  .report-content li { margin-bottom: 4px; }
+  .report-content strong { color: #cbd5e1; }
+  .report-content code {
+    background: #0f172a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #a78bfa;
+  }
+  .report-content blockquote {
+    border-left: 3px solid #3b82f6;
+    padding-left: 12px;
+    margin: 10px 0;
+    color: #94a3b8;
+    font-style: italic;
+  }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: #475569;
+    gap: 8px;
+  }
+  .empty-state .icon { font-size: 36px; opacity: 0.5; }
+  .empty-state .text { font-size: 13px; }
+
+  /* 连接状态提示 */
+  .connection-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 8px;
+  }
+  .connection-status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #64748b;
+  }
+  .connection-status.connected .dot { background: #22c55e; }
+  .connection-status.reconnecting .dot { background: #f59e0b; animation: blink 1s infinite; }
+  .connection-status.error .dot { background: #ef4444; }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #475569; }
+</style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">AI</div>
+    <span>多Agent深度研究系统</span>
+  </div>
+  <div class="api-key-input">
+    <label>SenseNova API Key:</label>
+    <input type="password" id="apiKey" placeholder="请输入API Key">
+  </div>
+</div>
+
+<!-- 主布局 -->
+<div class="main">
+  <!-- 左侧控制面板 -->
+  <div class="sidebar-left">
+    <div class="panel-title">研究配置</div>
+    <div class="form-group">
+      <label>公司名称</label>
+      <input type="text" id="companyName" placeholder="例如：商汤科技" value="商汤科技">
+    </div>
+    <div class="form-group">
+      <label>研究深度</label>
+      <div class="depth-options">
+        <div class="depth-btn active" data-depth="basic" onclick="setDepth('basic')">
+          <div>基础</div>
+          <div class="dim-num">2 维度</div>
+        </div>
+        <div class="depth-btn" data-depth="standard" onclick="setDepth('standard')">
+          <div>标准</div>
+          <div class="dim-num">4 维度</div>
+        </div>
+        <div class="depth-btn" data-depth="deep" onclick="setDepth('deep')">
+          <div>深度</div>
+          <div class="dim-num">6 维度</div>
+        </div>
+      </div>
+    </div>
+    <button class="btn-start" id="startBtn" onclick="startResearch()">开始研究</button>
+
+    <div class="progress-section">
+      <div class="panel-title">研究进度</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-text">
+        <span id="progressPhase">等待开始</span>
+        <span id="progressPercent">0%</span>
+      </div>
+      <div class="connection-status" id="connectionStatus">
+        <span class="dot"></span>
+        <span id="connectionText">未连接</span>
+      </div>
+    </div>
+
+    <div class="info-card">
+      <h4>研究统计</h4>
+      <div class="info-item"><span class="label">状态</span><span id="statStatus">待启动</span></div>
+      <div class="info-item"><span class="label">日志数</span><span id="statLogs">0</span></div>
+      <div class="info-item"><span class="label">工具调用</span><span id="statTools">0</span></div>
+      <div class="info-item"><span class="label">耗时</span><span id="statDuration">0ms</span></div>
+    </div>
+  </div>
+
+  <!-- 中间区域 -->
+  <div class="center">
+    <!-- Agent流程可视化 -->
+    <div class="flow-visual">
+      <div class="flow-title">Agent 执行流程</div>
+      <div class="flow-nodes">
+        <div class="agent-node" id="node-planner">
+          <div class="agent-icon">📋</div>
+          <div class="agent-name">规划Agent</div>
+          <div class="agent-desc">制定研究计划</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="agent-node" id="node-researcher">
+          <div class="agent-icon">🔍</div>
+          <div class="agent-name">调研Agent</div>
+          <div class="agent-desc" id="researcher-desc">信息收集分析</div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="agent-node" id="node-writer">
+          <div class="agent-icon">✍️</div>
+          <div class="agent-name">报告Agent</div>
+          <div class="agent-desc">生成研究报告</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 当前步骤详情 -->
+    <div class="step-detail">
+      <div class="step-detail-header">
+        <span class="step-detail-title">当前步骤详情</span>
+        <div class="tabs">
+          <div class="tab active" onclick="switchTab('input')">输入</div>
+          <div class="tab" onclick="switchTab('output')">输出</div>
+          <div class="tab" onclick="switchTab('tools')">工具调用</div>
+        </div>
+      </div>
+      <div class="tab-content active" id="tab-input">
+        <div class="empty-state">
+          <div class="icon">📥</div>
+          <div class="text">选择日志条目查看输入详情</div>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-output">
+        <div class="empty-state">
+          <div class="icon">📤</div>
+          <div class="text">选择日志条目查看输出详情</div>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-tools">
+        <div class="empty-state">
+          <div class="icon">🛠️</div>
+          <div class="text">暂无工具调用</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧日志面板 -->
+  <div class="sidebar-right">
+    <div class="log-header">
+      <div class="log-title">执行日志</div>
+      <div class="log-filter">
+        <span class="filter-chip active" data-filter="all" onclick="setFilter('all')">全部</span>
+        <span class="filter-chip" data-filter="planner" onclick="setFilter('planner')">规划</span>
+        <span class="filter-chip" data-filter="researcher" onclick="setFilter('researcher')">调研</span>
+        <span class="filter-chip" data-filter="writer" onclick="setFilter('writer')">报告</span>
+      </div>
+    </div>
+    <div class="log-list" id="logList"></div>
+  </div>
+
+  <!-- 底部报告区 -->
+  <div class="report-panel" id="reportPanel">
+    <div class="report-header" onclick="toggleReport()">
+      <div class="report-title">
+        <span class="report-toggle-icon">▲</span>
+        <span>研究报告</span>
+        <span style="font-size:12px; color:#64748b; font-weight:400;" id="reportSubtitle">点击展开</span>
+      </div>
+      <div class="report-actions">
+        <button class="btn-small" onclick="exportMarkdown(event)">导出 Markdown</button>
+      </div>
+    </div>
+    <div class="report-content" id="reportContent">
+      <div class="empty-state">
+        <div class="icon">📄</div>
+        <div class="text">研究完成后报告将显示在此处</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 全局状态
+// ============================================================
+// Vercel 部署后使用相对路径，自动匹配域名
+const API_BASE = '/api';
+let currentDepth = 'basic';
+let currentTaskId = null;
+let eventSource = null;
+let allLogs = [];
+let currentFilter = 'all';
+let selectedLogIndex = -1;
+let toolCallCount = 0;
+let startTime = null;
+let reportMarkdown = '';
+let pollTimer = null;
+let usePolling = false; // 是否使用轮询模式（SSE失败时降级）
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+
+// ============================================================
+// 初始化
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  // 从localStorage读取API Key
+  const savedKey = localStorage.getItem('sensenova_api_key');
+  if (savedKey) {
+    document.getElementById('apiKey').value = savedKey;
+  }
+  // 保存API Key
+  document.getElementById('apiKey').addEventListener('change', (e) => {
+    localStorage.setItem('sensenova_api_key', e.target.value);
+  });
+
+  // 检查健康状态
+  checkHealth();
+});
+
+// ============================================================
+// 健康检查
+// ============================================================
+function checkHealth() {
+  fetch(`${API_BASE}/health`)
+    .then(res => res.json())
+    .then(data => {
+      console.log('服务健康状态:', data);
+    })
+    .catch(err => {
+      console.warn('健康检查失败（首次加载可能正常）:', err);
+    });
+}
+
+// ============================================================
+// 连接状态显示
+// ============================================================
+function setConnectionStatus(status, text) {
+  const el = document.getElementById('connectionStatus');
+  const textEl = document.getElementById('connectionText');
+  el.className = 'connection-status ' + status;
+  textEl.textContent = text;
+}
+
+// ============================================================
+// 深度选择
+// ============================================================
+function setDepth(depth) {
+  currentDepth = depth;
+  document.querySelectorAll('.depth-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.depth === depth);
+  });
+}
+
+// ============================================================
+// 过滤器
+// ============================================================
+function setFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.classList.toggle('active', chip.dataset.filter === filter);
+  });
+  renderLogs();
+}
+
+// ============================================================
+// Tab切换
+// ============================================================
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+// ============================================================
+// 开始研究
+// ============================================================
+function startResearch() {
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const companyName = document.getElementById('companyName').value.trim();
+
+  if (!apiKey) {
+    alert('请输入 SenseNova API Key');
+    return;
+  }
+  if (!companyName) {
+    alert('请输入公司名称');
+    return;
+  }
+
+  // 重置状态
+  resetState();
+  startTime = Date.now();
+  reconnectAttempts = 0;
+  usePolling = false;
+
+  const btn = document.getElementById('startBtn');
+  btn.disabled = true;
+  btn.textContent = '研究中...';
+  document.getElementById('statStatus').textContent = '运行中';
+
+  // 启动研究
+  fetch(`${API_BASE}/research`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ company_name: companyName, depth: currentDepth, api_key: apiKey })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.error) {
+      throw new Error(data.error);
+    }
+    currentTaskId = data.task_id;
+    // 先尝试 SSE 连接
+    connectStream();
+  })
+  .catch(err => {
+    alert('启动失败: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = '开始研究';
+    document.getElementById('statStatus').textContent = '启动失败';
+  });
+}
+
+// ============================================================
+// SSE连接（带自动重连和降级到轮询）
+// ============================================================
+function connectStream() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+
+  setConnectionStatus('connecting', '连接中...');
+
+  eventSource = new EventSource(`${API_BASE}/research/${currentTaskId}/stream`);
+
+  eventSource.onopen = () => {
+    setConnectionStatus('connected', '已连接 (SSE)');
+    reconnectAttempts = 0;
+  };
+
+  eventSource.onmessage = (e) => {
+    try {
+      const event = JSON.parse(e.data);
+      handleEvent(event);
+    } catch (err) {
+      console.error('解析事件失败:', err);
+    }
+  };
+
+  eventSource.onerror = (e) => {
+    console.warn('SSE连接错误:', e);
+
+    if (eventSource.readyState === EventSource.CLOSED) {
+      // 连接被关闭
+      setConnectionStatus('error', '连接断开');
+    } else if (eventSource.readyState === EventSource.CONNECTING) {
+      setConnectionStatus('reconnecting', '重连中...');
+      // 浏览器会自动重连，但我们需要计数
+      reconnectAttempts++;
+
+      // 如果重连次数过多，切换到轮询模式
+      if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.warn('SSE 重连次数过多，切换到轮询模式');
+        eventSource.close();
+        eventSource = null;
+        switchToPolling();
+      }
+    }
+  };
+}
+
+// ============================================================
+// 轮询模式（SSE不可用时的降级方案）
+// ============================================================
+function switchToPolling() {
+  usePolling = true;
+  setConnectionStatus('reconnecting', '轮询模式');
+
+  if (pollTimer) {
+    clearInterval(pollTimer);
+  }
+
+  // 每 2 秒轮询一次结果
+  pollTimer = setInterval(() => {
+    if (!currentTaskId) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      return;
+    }
+
+    fetch(`${API_BASE}/research/${currentTaskId}/result`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          console.warn('轮询结果错误:', data.error);
+          return;
+        }
+
+        // 如果任务完成了
+        if (data.status === 'completed' || data.status === 'error') {
+          clearInterval(pollTimer);
+          pollTimer = null;
+
+          // 构造 complete 事件
+          if (data.result) {
+            handleEvent({
+              type: 'complete',
+              data: {
+                report: data.result.report,
+                logs: data.result.logs,
+                total_duration_ms: data.result.total_duration_ms,
+              },
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          setConnectionStatus('connected', '已完成');
+        } else {
+          // 任务还在运行，更新日志数
+          if (data.events_count !== undefined) {
+            // 注意：轮询模式下无法获取实时日志流
+            // 只能在任务完成后获取完整日志
+          }
+        }
+      })
+      .catch(err => {
+        console.warn('轮询请求失败:', err);
+      });
+  }, 2000);
+}
+
+// ============================================================
+// 事件处理
+// ============================================================
+function handleEvent(event) {
+  const { type, data } = event;
+
+  switch (type) {
+    case 'log':
+      addLog(data);
+      break;
+    case 'agent_start':
+      handleAgentStart(data);
+      break;
+    case 'agent_end':
+      handleAgentEnd(data);
+      break;
+    case 'tool_call':
+      toolCallCount++;
+      document.getElementById('statTools').textContent = toolCallCount;
+      break;
+    case 'progress':
+      updateProgress(data);
+      break;
+    case 'complete':
+      handleComplete(data);
+      break;
+    case 'error':
+      handleError(data);
+      break;
+    case 'ping':
+      // 心跳，忽略
+      break;
+  }
+
+  // 更新耗时
+  if (startTime) {
+    const elapsed = Date.now() - startTime;
+    document.getElementById('statDuration').textContent = formatDuration(elapsed);
+  }
+}
+
+// ============================================================
+// 日志处理
+// ============================================================
+function addLog(log) {
+  allLogs.push(log);
+  document.getElementById('statLogs').textContent = allLogs.length;
+  renderLogs();
+  // 自动滚动到底部
+  const logList = document.getElementById('logList');
+  logList.scrollTop = logList.scrollHeight;
+}
+
+function renderLogs() {
+  const logList = document.getElementById('logList');
+  const filtered = currentFilter === 'all'
+    ? allLogs
+    : allLogs.filter(l => l.agent === currentFilter);
+
+  logList.innerHTML = filtered.map((log, idx) => {
+    const realIndex = allLogs.indexOf(log);
+    const agentClass = log.agent || 'system';
+    const time = log.timestamp ? log.timestamp.split('T')[1].split('.')[0] : '';
+    const dur = log.duration_ms ? `(${log.duration_ms}ms)` : '';
+    return `
+      <div class="log-item ${realIndex === selectedLogIndex ? 'selected' : ''}"
+           onclick="selectLog(${realIndex})">
+        <div class="log-item-header">
+          <span class="log-step">#${log.step}</span>
+          <span class="log-agent ${agentClass}">${agentLabel(log.agent)}</span>
+          <span class="log-action">${escapeHtml(log.action)}</span>
+          <span class="log-duration">${dur}</span>
+        </div>
+        <div class="log-summary">${escapeHtml(log.output_summary || log.input_summary || '')}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function agentLabel(agent) {
+  const map = { planner: '规划', researcher: '调研', writer: '报告', system: '系统' };
+  return map[agent] || agent || '未知';
+}
+
+function selectLog(index) {
+  selectedLogIndex = index;
+  const log = allLogs[index];
+  if (!log) return;
+
+  renderLogs();
+
+  // 更新详情面板
+  document.getElementById('tab-input').innerHTML = `
+    <div class="detail-section">
+      <h4>Agent</h4>
+      <div class="content">${escapeHtml(log.agent || '')}</div>
+    </div>
+    <div class="detail-section">
+      <h4>动作</h4>
+      <div class="content">${escapeHtml(log.action || '')}</div>
+    </div>
+    <div class="detail-section">
+      <h4>输入摘要</h4>
+      <div class="content">${escapeHtml(log.input_summary || '(无)')}</div>
+    </div>
+    <div class="detail-section">
+      <h4>时间</h4>
+      <div class="content">${escapeHtml(log.timestamp || '')}</div>
+    </div>
+  `;
+
+  document.getElementById('tab-output').innerHTML = `
+    <div class="detail-section">
+      <h4>输出摘要</h4>
+      <div class="content">${escapeHtml(log.output_summary || '(无)')}</div>
+    </div>
+    <div class="detail-section">
+      <h4>耗时</h4>
+      <div class="content">${log.duration_ms ? log.duration_ms + ' ms' : 'N/A'}</div>
+    </div>
+  `;
+
+  // 工具调用
+  const tools = log.tool_calls || [];
+  if (tools.length === 0) {
+    document.getElementById('tab-tools').innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🛠️</div>
+        <div class="text">此步骤无工具调用</div>
+      </div>
+    `;
+  } else {
+    document.getElementById('tab-tools').innerHTML = tools.map(tc => `
+      <div class="tool-call-item">
+        <div class="tool-call-header">
+          <span class="tool-call-name">${escapeHtml(tc.name)}</span>
+        </div>
+        <div class="tool-call-args">参数: ${escapeHtml(tc.arguments || '')}</div>
+        <div class="tool-call-result">结果: ${escapeHtml(tc.result_summary || '')}</div>
+      </div>
+    `).join('');
+  }
+}
+
+// ============================================================
+// Agent状态
+// ============================================================
+function handleAgentStart(data) {
+  const agent = data.agent;
+  const node = document.getElementById('node-' + agent);
+  if (node) {
+    node.classList.remove('done', 'error');
+    node.classList.add('active');
+  }
+  if (agent === 'researcher' && data.dimension) {
+    document.getElementById('researcher-desc').textContent = data.dimension;
+  }
+}
+
+function handleAgentEnd(data) {
+  const agent = data.agent;
+  const node = document.getElementById('node-' + agent);
+  if (node) {
+    node.classList.remove('active');
+    node.classList.add(data.status === 'success' ? 'done' : 'error');
+  }
+}
+
+// ============================================================
+// 进度更新
+// ============================================================
+function updateProgress(data) {
+  const percent = data.percent || 0;
+  document.getElementById('progressFill').style.width = percent + '%';
+  document.getElementById('progressPercent').textContent = percent + '%';
+  document.getElementById('progressPhase').textContent = data.message || '';
+}
+
+// ============================================================
+// 完成/错误处理
+// ============================================================
+function handleComplete(data) {
+  reportMarkdown = data.report || '';
+  renderReport(reportMarkdown);
+
+  document.getElementById('statStatus').textContent = '已完成';
+  document.getElementById('reportSubtitle').textContent = '研究已完成，点击查看';
+
+  const btn = document.getElementById('startBtn');
+  btn.disabled = false;
+  btn.textContent = '开始研究';
+
+  // 清理连接
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  setConnectionStatus('connected', '已完成');
+}
+
+function handleError(data) {
+  document.getElementById('statStatus').textContent = '出错';
+  const btn = document.getElementById('startBtn');
+  btn.disabled = false;
+  btn.textContent = '开始研究';
+
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  setConnectionStatus('error', '出错');
+}
+
+// ============================================================
+// 报告渲染
+// ============================================================
+function renderReport(md) {
+  const html = simpleMarkdown(md);
+  document.getElementById('reportContent').innerHTML = html;
+}
+
+function simpleMarkdown(text) {
+  if (!text) return '';
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // 标题
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // 粗体
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // 斜体
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // 代码
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // 引用
+    .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+    // 无序列表
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/^  - (.+)$/gm, '<li style="margin-left:20px">$1</li>')
+    // 有序列表
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    // 换行
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  html = '<p>' + html + '</p>';
+  // 合并连续li为ul
+  html = html.replace(/(<li>.*?<\/li>)+/g, match => `<ul>${match}</ul>`);
+  return html;
+}
+
+// ============================================================
+// 报告展开/收起
+// ============================================================
+function toggleReport() {
+  const panel = document.getElementById('reportPanel');
+  panel.classList.toggle('expanded');
+  document.getElementById('reportSubtitle').textContent =
+    panel.classList.contains('expanded') ? '点击收起' : '点击展开';
+}
+
+// ============================================================
+// 导出Markdown
+// ============================================================
+function exportMarkdown(e) {
+  e.stopPropagation();
+  if (!reportMarkdown) {
+    alert('暂无报告可导出');
+    return;
+  }
+  const blob = new Blob([reportMarkdown], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const company = document.getElementById('companyName').value.trim() || 'report';
+  a.download = `${company}_研究报告.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// 工具函数
+// ============================================================
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatDuration(ms) {
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  return `${m}m${s}s`;
+}
+
+function resetState() {
+  allLogs = [];
+  selectedLogIndex = -1;
+  toolCallCount = 0;
+  reportMarkdown = '';
+  document.getElementById('logList').innerHTML = '';
+  document.getElementById('statLogs').textContent = '0';
+  document.getElementById('statTools').textContent = '0';
+  document.getElementById('statDuration').textContent = '0ms';
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('progressPercent').textContent = '0%';
+  document.getElementById('progressPhase').textContent = '等待开始';
+  document.getElementById('researcher-desc').textContent = '信息收集分析';
+
+  // 重置节点状态
+  ['planner', 'researcher', 'writer'].forEach(a => {
+    const node = document.getElementById('node-' + a);
+    node.classList.remove('active', 'done', 'error');
+  });
+
+  // 重置详情面板
+  ['input', 'output', 'tools'].forEach(tab => {
+    const el = document.getElementById('tab-' + tab);
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">${tab === 'input' ? '📥' : tab === 'output' ? '📤' : '🛠️'}</div>
+        <div class="text">选择日志条目查看详情</div>
+      </div>
+    `;
+  });
+
+  // 重置报告
+  document.getElementById('reportContent').innerHTML = `
+    <div class="empty-state">
+      <div class="icon">📄</div>
+      <div class="text">研究完成后报告将显示在此处</div>
+    </div>
+  `;
+  document.getElementById('reportSubtitle').textContent = '点击展开';
+  document.getElementById('reportPanel').classList.remove('expanded');
+
+  // 清理连接
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  setConnectionStatus('', '未连接');
+}
+</script>
+
+</body>
+</html>
