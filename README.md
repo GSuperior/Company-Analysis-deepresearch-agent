@@ -1,181 +1,109 @@
-# DeepResearch Agent · 多智能体公司深度研究系统
+# DeepResearch Agent v2 · 多智能体深度研究系统
 
-基于 SenseNova API 的多 Agent 企业研究工具，真实调用大模型，完整展示 Agent 协作流程，可一键部署到 Vercel。
+基于 SenseNova API 的多 Agent 企业深度研究工具，真实调用大模型 + function calling，完整展示 5 个 Agent 的协作流程，一键部署到 Vercel。
 
-## 功能
+## 功能特性
 
-- **5 个 Agent 协同工作**：规划师 → 调研员（×N）→ 写作师 → 审核师 → 事实核查
-- **动态维度生成**：根据公司类型（科技/制造/消费/金融/医疗）自动适配研究维度
-- **质量审核闭环**：初稿 → 审核 → 修改 → 终稿，确保报告质量
-- **事实核查**：自动提取关键数据点，标注可信度
-- **三层输出**：执行摘要 + 关键指标 + 完整报告
-- **流程可视化**：实时展示每个 Agent 的输入、输出、工具调用、完整日志
-- **SSE 实时流**：研究过程实时推送
+- **5 个 Agent 协同工作**：Planner → Researcher (×N) → Writer → Reviewer ↔ FactChecker
+- **合理的工具配置**：每个 Agent 的工具配置与其角色匹配（需要信息的 Agent 配备搜索工具）
+- **动态研究维度**：根据公司特点生成 3-7 个研究维度
+- **质量审核闭环**：初稿 → 审核 → 修改 → 终稿（支持多轮迭代）
+- **事实核查机制**：自动提取关键数据点，搜索验证并标注可信度
+- **三层深度模式**：basic / standard / deep，满足不同研究需求
+- **SSE 实时流**：研究过程实时推送到前端
+- **流程可视化**：实时展示每个 Agent 的状态、输入输出、工具调用
+- **优雅降级**：每个环节都有 fallback 机制，确保流程不中断
+- **总超时保护**：10分钟总超时，防止任务无限运行
 
-## Agent 工作原理
+## Agent 架构
 
-### 整体流程
+### Agent 工具配置
+
+| Agent | 角色 | 工具 | 配置理由 |
+|-------|------|------|----------|
+| **Planner** | 研究总监 | `web_search` | 需要先快速了解公司，才能制定合理的研究计划 |
+| **Researcher** | 信息检索专家 | `web_search`, `company_lookup`, `financial_data` | 调研是核心环节，需要多种信息获取工具 |
+| **Writer** | 资深行业研究员 | 无 | 写作是整合工作，信息来自调研结果 |
+| **Reviewer** | 质量审核专家 | 无 | 审核逻辑/结构/可读性，数据准确性由 FactChecker 专门负责 |
+| **FactChecker** | 事实核查员 | `web_search` | 事实核查必须有外部验证能力，否则名不副实 |
+
+### 研究流程
 
 ```
-用户输入（公司名 + 研究深度）
-        │
-        ▼
-┌─────────────────┐
-│  1. Planner      │  研究规划师
-│  （规划阶段）     │  · 判断公司类型
-└────────┬────────┘  · 生成研究维度
-         │ 研究计划（3-7个维度 + 关键问题）
-         ▼
-┌─────────────────┐
-│  2. Researcher   │  信息搜集员（串行执行N个维度）
-│  （调研阶段）     │  · 调用 web_search 工具
-└────────┬────────┘  · 整理结构化调研结果
-         │ 各维度调研结果
-         ▼
-┌─────────────────┐
-│  3. Writer       │  报告撰写师
-│  （成稿阶段）     │  · 整合所有维度信息
-└────────┬────────┘  · 撰写完整报告初稿
-         │ 报告初稿
-         ▼
-┌─────────────────┐
-│  4. Reviewer     │  质量审核师
-│  （审核阶段）     │  · 数据准确性 / 逻辑一致性
-└────────┬────────┘  · 结构完整性 / 可读性
-         │ 审核意见（评分 + 修改建议）
-         ▼
-┌─────────────────┐
-│  5. Writer       │  报告撰写师（修改模式）
-│  （修改阶段）     │  · 根据审核意见修改
-└────────┬────────┘
-         │ 终稿
-         ▼
-┌─────────────────┐
-│  6. Fact Check   │  事实核查
-│  （核查阶段）     │  · 提取关键数据点
-└────────┬────────┘  · 标注可信度等级
-         │
-         ▼
-    最终输出（摘要 + 指标 + 报告 + 核查结果）
+用户输入（公司名 + 深度）
+    │
+    ▼
+[Planner] ← web_search（快速了解公司）
+    │ 输出：公司画像 + 研究计划（维度列表）
+    ▼
+[Researcher] × N ← web_search / company_lookup / financial_data
+    │ 输出：各维度调研结果（结构化）
+    ▼
+[Writer]  ← 初稿
+    │
+    ▼
+[Reviewer] ←→ [Writer]  （多轮审核-修改循环）
+    │ 输出：审核意见 + 修改后报告
+    ▼
+[FactChecker] ← web_search（验证关键数据）
+    │ 输出：可信度评估 + 数据验证
+    ▼
+  最终输出
+（摘要 + 指标 + 报告 + 核查结果）
 ```
 
-### 各 Agent 详细说明
+### 深度差异化
 
-| Agent | 角色 | 输入 | 输出 | 工具 | 对应 SenseNova Skills |
-|-------|------|------|------|------|----------------------|
-| **Planner** | 研究总监 | 公司名 + 深度 | 公司画像 + 研究计划（维度列表） | 无 | sn-research-planning |
-| **Researcher** | 信息检索专家 | 单个维度 + 关键问题 | 调研结果（摘要 + 发现 + 数据点） | web_search | sn-dimension-research |
-| **Writer** | 资深行业研究员 | 所有维度调研结果 | 完整 Markdown 报告 | 无 | sn-research-report |
-| **Reviewer** | 质量把控专家 | 初稿 + 调研结果 | 评分 + 问题列表 + 修改建议 | 无 | sn-quality-review |
-| **Fact Check** | 数据核查员 | 终稿报告 | 关键数据点 + 可信度标注 | 无 | sn-fact-check |
-
-### 动态维度设计
-
-Planner 先判断公司类型，再从对应模板中选取维度：
-
-| 公司类型 | 维度池 |
-|---------|--------|
-| 科技公司 | 公司概况、核心技术与产品、市场地位与竞争、商业模式与营收、财务表现、研发与创新、团队与人才 |
-| 制造企业 | 公司概况、核心产品与产能、供应链与成本、市场份额与竞争、财务表现、技术与工艺、ESG与合规 |
-| 消费品牌 | 公司概况、品牌力与渠道、产品矩阵与创新、用户与市场、财务表现、供应链与质量、营销与增长 |
-| 金融机构 | 公司概况、业务结构与收入、资产质量与风险、监管与合规、财务表现、科技与数字化、团队与治理 |
-| 医疗健康 | 公司概况、核心产品与管线、研发与临床、市场与商业化、财务表现、监管与合规、团队与人才 |
-
-**深度对应维度数：**
-- basic：3 个核心维度
-- standard：5 个维度
-- deep：7 个维度
-
-### 质量审核闭环
-
-Reviewer 从四个维度审核报告：
-
-1. **数据准确性** — 关键数据是否有来源支撑，数字是否合理
-2. **逻辑一致性** — 前后论述是否矛盾，因果是否成立
-3. **结构完整性** — 章节是否齐全，重点是否突出
-4. **可读性** — 语言是否通顺，表达是否清晰
-
-输出：总分（0-100）+ 各维度评分 + 具体问题列表（含严重程度和修改建议）。
-
-standard/deep 深度会让 Writer 根据审核意见修改一轮；basic 深度只审核不修改。
-
-### 事实核查
-
-自动提取报告中的关键数据点（营收、利润、增长率、市场份额、员工数、专利数等），标注可信度：
-
-- **高可信度**：有多个来源交叉验证，来源权威
-- **中可信度**：有单一来源支撑，或数据为估算值
-- **低可信度**：无明确来源，数据存疑
-
-### 工具调用
-
-Researcher 使用 SenseNova 的 function calling 能力调用 `web_search` 工具：
-
-1. Agent 判断需要搜索的关键词
-2. 调用 `web_search(query=...)`
-3. 获取搜索结果
-4. 整理成结构化调研结论
-5. 必要时进行多轮搜索（同一维度多次搜索补充信息）
-
-## 快速开始
-
-### 本地运行
-
-```bash
-pip install -r requirements.txt
-python index.py
-# 打开 http://localhost:5000
-```
-
-### 部署到 Vercel
-
-1. 代码 push 到 GitHub 仓库
-2. 打开 [vercel.com](https://vercel.com) → New Project → 选择仓库
-3. Framework Preset 选 **Other**，其他默认
-4. 点击 Deploy，1-2 分钟完成
-5. 打开分配的域名，输入 SenseNova API Key 即可使用
-
-**Vercel 部署注意事项：**
-- Hobby（免费）：函数执行时间 10 秒，SSE 会频繁断开，前端自动重连 + 轮询降级
-- Pro：300 秒，可完成 basic/standard 深度研究
-- Serverless 是无状态的，任务存在内存中，实例切换可能丢失
+| 深度 | 维度数 | Review修改轮数 | FactChecker | 预计耗时 |
+|------|--------|---------------|-------------|---------|
+| basic | 3 | 0轮（仅审核） | 基础版（规则提取+搜索验证） | ~90秒 |
+| standard | 5 | 1轮 | LLM核查+多次搜索验证 | ~3分钟 |
+| deep | 7 | 2轮 | 全量核查+交叉验证 | ~5分钟 |
 
 ## 项目结构
 
 ```
-├── index.py              # Flask 入口（Vercel WSGI 应用）
-├── agent_system.py       # Agent 系统核心（5 个 Agent + 编排器）
-├── public/
-│   └── index.html        # 前端页面（单文件）
-├── api/                  # 保留目录（兼容备用）
-│   ├── index.py
-│   ├── agent_system.py
-│   └── requirements.txt
-├── vercel.json           # Vercel 部署配置
-├── requirements.txt      # Python 依赖
+research-agent-v2/
+├── api/
+│   ├── [...path].py       # Vercel catch-all 入口（捕获所有 /api/* 请求）
+│   ├── index.py            # Flask 应用主入口
+│   ├── agent_system.py     # Agent 系统核心（5个Agent + 编排器）
+│   ├── tools.py            # 工具定义（web_search / company_lookup / financial_data）
+│   └── requirements.txt    # Python 依赖（Vercel 读取此文件）
+├── index.html              # 前端页面（Vercel自动服务静态文件）
+├── vercel.json             # Vercel 配置（rewrites + 函数超时 + CORS头）
+├── .gitignore
 └── README.md
 ```
 
-## API
+> **Vercel 部署说明**：
+> - `api/[...path].py` 是 catch-all Serverless Function，捕获所有 `/api/*` 请求
+> - 根目录的 `index.html` 等静态文件由 Vercel 自动服务
+> - Python 依赖由 `api/requirements.txt` 管理
+
+## API 端点
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/research` | 启动研究 |
-| GET | `/api/research/<id>/stream` | SSE 实时流 |
-| GET | `/api/research/<id>/result` | 获取结果 |
 | GET | `/api/health` | 健康检查 |
+| POST | `/api/research` | 启动研究任务 |
+| GET | `/api/research/<id>/stream` | SSE 实时流 |
+| GET | `/api/research/<id>/result` | 获取研究结果（轮询用） |
+| GET | `/api/tasks` | 任务列表（调试用） |
 
 ### 启动研究
 
 ```bash
-curl -X POST https://your-domain.vercel.app/api/research \
+curl -X POST http://localhost:5000/api/research \
   -H "Content-Type: application/json" \
   -d '{
     "company_name": "商汤科技",
     "depth": "basic",
-    "api_key": "your-api-key"
+    "api_key": "your-sensenova-api-key"
   }'
 ```
+
+也可以通过环境变量 `SENSENOVA_API_KEY` 配置 API Key。
 
 ### SSE 事件类型
 
@@ -183,19 +111,61 @@ curl -X POST https://your-domain.vercel.app/api/research \
 |------|------|
 | `progress` | 进度更新（百分比 + 阶段 + 消息） |
 | `agent_start` / `agent_end` | Agent 开始/结束 |
-| `tool_call` | 工具调用（名称 + 参数 + 结果） |
+| `tool_call` | 工具调用记录 |
 | `log` | 步骤日志 |
 | `reviewer_end` | 审核完成（评分 + 问题数） |
 | `fact_check` | 事实核查结果 |
-| `complete` | 任务完成（报告 + 摘要 + 指标 + 审核结果） |
+| `complete` | 任务完成（完整结果） |
 | `error` | 错误信息 |
+| `ping` | 心跳保活 |
+
+## 快速开始
+
+### 本地运行
+
+```bash
+# 安装依赖
+pip install -r api/requirements.txt
+
+# 启动服务
+python api/index.py
+
+# 打开浏览器访问
+# http://localhost:5000/index.html
+```
+
+### 部署到 Vercel
+
+1. 将代码推送到 GitHub 仓库
+2. 打开 [vercel.com](https://vercel.com) → New Project → 选择仓库
+3. Framework Preset 选 **Other**，其他保持默认
+4. 点击 Deploy，等待 1-2 分钟完成
+5. 打开分配的域名即可使用
+
+**Vercel 部署注意事项**：
+
+- Hobby（免费）：函数执行时间 10 秒，SSE 会频繁断开，前端会自动重连 + 轮询降级
+- Pro：300 秒，可完成 basic/standard 深度研究
+- Serverless 是无状态的，任务存在内存中，实例切换可能丢失
+- 生产环境建议使用 Redis/Vercel KV 等外部存储
 
 ## 技术栈
 
 - **后端**：Python 3 + Flask + SenseNova API
-- **前端**：原生 HTML/CSS/JS（单文件，无构建）
+- **前端**：原生 HTML/CSS/JS（单文件，零构建）
 - **AI 模型**：商汤 SenseNova（sensenova-6.7-flash-lite）
-- **部署**：Vercel Serverless Functions
+- **部署**：Vercel Serverless Functions（catch-all 路由）
+- **通信**：SSE (Server-Sent Events) + 轮询降级
+
+## 代码质量
+
+- 所有函数均有 docstring 文档
+- 完善的错误处理和降级机制（每个 Agent 都有 fallback）
+- 输入验证和超时保护（单次API调用60秒，总流程10分钟）
+- 完整的日志记录
+- API Key 安全处理（脱敏存储、仅内存传递、日志不泄露）
+- 任务数量上限（100个）防止内存无限增长
+- JSON 解析四层容错（直接解析→代码块→括号平衡→截断补全）
 
 ## License
 
