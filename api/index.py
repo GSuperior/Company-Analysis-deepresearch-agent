@@ -45,10 +45,24 @@ logger = logging.getLogger("api")
 # ============================================================
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Vercel 需要的 WSGI application 变量
 application = app
+
+
+def add_route(rule: str, **options):
+    """
+    同时注册带 /api 前缀和不带前缀的路由，
+    确保在 Vercel（可能剥离/api前缀）和本地开发（完整路径）都能工作。
+    """
+    def decorator(f):
+        # 带 /api 前缀的路由（本地开发用）
+        app.add_url_rule(f"/api{rule}", f"api_{f.__name__}", f, **options)
+        # 不带前缀的路由（Vercel 环境下可能用到）
+        app.add_url_rule(rule, f.__name__, f, **options)
+        return f
+    return decorator
 
 # ============================================================
 # 全局任务存储（内存字典）
@@ -229,7 +243,7 @@ def mask_api_key(api_key: str) -> str:
 # API 端点
 # ============================================================
 
-@app.route("/api/health", methods=["GET"])
+@add_route("/health", methods=["GET"])
 def health_check():
     """
     健康检查端点
@@ -252,7 +266,7 @@ def health_check():
     })
 
 
-@app.route("/api/research", methods=["POST"])
+@add_route("/research", methods=["POST"])
 def start_research():
     """
     启动研究任务
@@ -307,7 +321,7 @@ def start_research():
         return jsonify({"error": f"创建任务失败: {str(e)}"}), 500
 
 
-@app.route("/api/research/<task_id>/stream", methods=["GET"])
+@add_route("/research/<task_id>/stream", methods=["GET"])
 def research_stream(task_id: str):
     """
     SSE实时流端点
@@ -398,7 +412,7 @@ def research_stream(task_id: str):
     )
 
 
-@app.route("/api/research/<task_id>/result", methods=["GET"])
+@add_route("/research/<task_id>/result", methods=["GET"])
 def research_result(task_id: str):
     """
     获取研究结果（推荐用于轮询）
@@ -450,7 +464,7 @@ def research_result(task_id: str):
     })
 
 
-@app.route("/api/tasks", methods=["GET"])
+@add_route("/tasks", methods=["GET"])
 def list_tasks():
     """
     列出所有任务（调试用）
