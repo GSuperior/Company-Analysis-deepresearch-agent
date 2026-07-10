@@ -1370,7 +1370,16 @@ input { font-family: inherit; outline: none; border: none; }
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                    下载
+                    下载MD
+                </button>
+                <button class="btn-text" id="downloadHtmlBtn" style="display:none;">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                    导出HTML
                 </button>
                 <button class="btn-text toggle-report" id="toggleReportBtn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1539,6 +1548,7 @@ input { font-family: inherit; outline: none; border: none; }
         dom.reportBadge = document.getElementById('reportBadge');
         dom.copyReportBtn = document.getElementById('copyReportBtn');
         dom.downloadReportBtn = document.getElementById('downloadReportBtn');
+        dom.downloadHtmlBtn = document.getElementById('downloadHtmlBtn');
         dom.toastContainer = document.getElementById('toastContainer');
     }
 
@@ -2427,6 +2437,7 @@ input { font-family: inherit; outline: none; border: none; }
             dom.reportBadge.style.display = 'inline-block';
             dom.copyReportBtn.style.display = 'flex';
             dom.downloadReportBtn.style.display = 'flex';
+            dom.downloadHtmlBtn.style.display = 'flex';
             expandReport();
         }
 
@@ -2498,6 +2509,7 @@ input { font-family: inherit; outline: none; border: none; }
         dom.reportBadge.style.display = 'none';
         dom.copyReportBtn.style.display = 'none';
         dom.downloadReportBtn.style.display = 'none';
+        dom.downloadHtmlBtn.style.display = 'none';
         state.report = null;
         state.lastError = null;
 
@@ -2592,6 +2604,238 @@ input { font-family: inherit; outline: none; border: none; }
         showToast('报告已下载', 'success');
     }
 
+    function downloadHTMLReport() {
+        if (!state.report) return;
+        const html = generateReportHTML(state.report, state.companyName);
+        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.companyName}_深度研究报告.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('HTML报告已导出', 'success');
+    }
+
+    function generateReportHTML(markdown, companyName) {
+        // 简单的 Markdown 转 HTML
+        const content = markdownToHTML(markdown);
+
+        // 从内容中提取标题用于侧边栏导航
+        const headings = extractHeadings(markdown);
+        const sidebarItems = headings.map((h, i) => {
+            const indent = h.level === 1 ? 'nav-h1' : h.level === 2 ? 'nav-h2' : 'nav-h3';
+            return `<a href="#section-${i}" class="nav-item ${indent}">${h.text}</a>`;
+        }).join('');
+
+        return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${companyName}深度研究报告</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --primary: #1e3a8a; --primary-light: #2848a0; --primary-dark: #172554;
+  --accent: #3b82f6; --accent-light: #60a5fa; --accent-dark: #2563eb;
+  --bg: #f8fafc; --bg-card: #ffffff; --bg-sidebar: #f1f5f9;
+  --text: #1e293b; --text-secondary: #475569; --text-tertiary: #64748b;
+  --border: #e2e8f0; --border-light: #f1f5f9;
+  --success: #10b981; --warning: #f59e0b; --danger: #ef4444;
+  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.07);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.08);
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px;
+  --sidebar-width: 280px; --content-max-width: 900px;
+}
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 16px; line-height: 1.8; color: var(--text);
+  background-color: var(--bg); -webkit-font-smoothing: antialiased;
+}
+.sidebar {
+  position: fixed; top: 0; left: 0; width: var(--sidebar-width); height: 100vh;
+  background-color: var(--bg-sidebar); border-right: 1px solid var(--border);
+  overflow-y: auto; z-index: 100;
+}
+.sidebar-header {
+  padding: 24px 20px 16px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: white; position: sticky; top: 0; z-index: 10;
+}
+.sidebar-header h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.sidebar-header p { font-size: 12px; opacity: 0.7; }
+.sidebar-nav { padding: 16px 0; }
+.nav-item {
+  display: block; padding: 8px 20px; font-size: 13px; color: var(--text-secondary);
+  text-decoration: none; border-left: 3px solid transparent; transition: all 0.2s;
+}
+.nav-item:hover { color: var(--primary); background-color: rgba(59, 130, 246, 0.08); }
+.nav-item.nav-h1 { font-weight: 600; color: var(--text); font-size: 14px; padding-left: 20px; }
+.nav-item.nav-h2 { padding-left: 32px; }
+.nav-item.nav-h3 { padding-left: 44px; font-size: 12px; color: var(--text-tertiary); }
+.main-content {
+  margin-left: var(--sidebar-width); min-height: 100vh; padding: 40px 60px;
+}
+.report-container {
+  max-width: var(--content-max-width); margin: 0 auto;
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  padding: 60px 60px; box-shadow: var(--shadow-md);
+}
+.report-container h1 {
+  font-size: 32px; font-weight: 700; color: var(--primary-dark);
+  margin-bottom: 8px; padding-bottom: 16px;
+  border-bottom: 3px solid var(--accent);
+}
+.report-container h2 {
+  font-size: 24px; font-weight: 600; color: var(--primary);
+  margin-top: 48px; margin-bottom: 20px; padding-bottom: 10px;
+  border-bottom: 2px solid var(--border);
+}
+.report-container h3 {
+  font-size: 18px; font-weight: 600; color: var(--text);
+  margin-top: 32px; margin-bottom: 14px;
+}
+.report-container p { margin-bottom: 16px; color: var(--text-secondary); }
+.report-container ul, .report-container ol {
+  margin-bottom: 16px; padding-left: 24px; color: var(--text-secondary);
+}
+.report-container li { margin-bottom: 8px; }
+.report-container strong { color: var(--text); font-weight: 600; }
+.report-container blockquote {
+  border-left: 4px solid var(--accent); padding: 12px 20px;
+  margin: 20px 0; background-color: rgba(59, 130, 246, 0.06);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--text-secondary);
+}
+.report-container table {
+  width: 100%; border-collapse: collapse; margin: 20px 0;
+  border-radius: var(--radius-md); overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.report-container th {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: white; padding: 12px 16px; text-align: left; font-weight: 600; font-size: 14px;
+}
+.report-container td {
+  padding: 12px 16px; border-bottom: 1px solid var(--border-light);
+  color: var(--text-secondary); font-size: 14px;
+}
+.report-container tr:nth-child(even) { background-color: #f8fafc; }
+.report-container tr:hover { background-color: rgba(59, 130, 246, 0.04); }
+.report-container hr {
+  border: none; border-top: 1px solid var(--border);
+  margin: 32px 0;
+}
+.report-container sup { color: var(--accent); font-size: 12px; }
+.report-footer {
+  margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--border);
+  text-align: center; color: var(--text-tertiary); font-size: 13px;
+}
+@media (max-width: 768px) {
+  .sidebar { transform: translateX(-100%); }
+  .main-content { margin-left: 0; padding: 20px; }
+  .report-container { padding: 30px 20px; }
+  .report-container h1 { font-size: 24px; }
+  .report-container h2 { font-size: 20px; }
+}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h2>${companyName}深度研究</h2>
+    <p>Deep Research Report</p>
+  </div>
+  <nav class="sidebar-nav">
+    ${sidebarItems}
+  </nav>
+</aside>
+<main class="main-content">
+  <div class="report-container">
+    ${content}
+    <div class="report-footer">
+      <p>本报告由 AI 智能体系统自动生成 · 仅供参考</p>
+    </div>
+  </div>
+</main>
+</body>
+</html>`;
+    }
+
+    function markdownToHTML(md) {
+        let html = md;
+        // 转义 HTML
+        html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+        // 标题
+        html = html.replace(/^### (.+)$/gm, (m, text) => {
+            state._headingIdx = (state._headingIdx || 0) + 1;
+            return `<h3 id="section-${state._headingIdx - 1}">${text.trim()}</h3>`;
+        });
+        state._headingIdx = 0;
+        html = html.replace(/^## (.+)$/gm, (m, text) => {
+            state._headingIdx = (state._headingIdx || 0) + 1;
+            return `<h2 id="section-${state._headingIdx - 1}">${text.trim()}</h2>`;
+        });
+        state._headingIdx = 0;
+        html = html.replace(/^# (.+)$/gm, (m, text) => {
+            state._headingIdx = (state._headingIdx || 0) + 1;
+            return `<h1 id="section-${state._headingIdx - 1}">${text.trim()}</h1>`;
+        });
+
+        // 粗体
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+        // 斜体
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+        // 引用
+        html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+
+        // 分隔线
+        html = html.replace(/^---$/gm, '<hr/>');
+
+        // 无序列表
+        html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>\n${m}</ul>\n`);
+
+        // 引用标记 [^s1]
+        html = html.replace(/\[\^s(\d+)\]/g, '<sup>[s$1]</sup>');
+
+        // 段落（最后处理）
+        html = html.split('\n').map(line => {
+            if (line.trim() && !line.startsWith('<h') && !line.startsWith('<ul') && !line.startsWith('<ol') &&
+                !line.startsWith('<li') && !line.startsWith('<blockquote') && !line.startsWith('<hr') &&
+                !line.startsWith('<table') && !line.startsWith('<tr') && !line.startsWith('<th') &&
+                !line.startsWith('<td') && !line.startsWith('</') && !line.startsWith('|')) {
+                return `<p>${line}</p>`;
+            }
+            return line;
+        }).join('\n');
+
+        return html;
+    }
+
+    function extractHeadings(md) {
+        const headings = [];
+        const lines = md.split('\n');
+        for (const line of lines) {
+            const match = line.match(/^(#{1,3}) (.+)$/);
+            if (match) {
+                headings.push({
+                    level: match[1].length,
+                    text: match[2].trim()
+                });
+            }
+        }
+        return headings;
+    }
+
     // ==================== 事件绑定 ====================
     function bindEvents() {
         // Agent 模式切换
@@ -2660,6 +2904,7 @@ input { font-family: inherit; outline: none; border: none; }
         });
         dom.copyReportBtn.addEventListener('click', (e) => { e.stopPropagation(); copyReport(); });
         dom.downloadReportBtn.addEventListener('click', (e) => { e.stopPropagation(); downloadReport(); });
+        dom.downloadHtmlBtn.addEventListener('click', (e) => { e.stopPropagation(); downloadHTMLReport(); });
 
         // 回车开始研究
         dom.companyInput.addEventListener('keydown', (e) => {
