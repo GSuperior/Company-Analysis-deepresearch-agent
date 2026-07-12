@@ -2,8 +2,8 @@
 多Agent深度研究系统 - Flask 应用入口（Vercel 零配置部署）
 
 包含两套 Agent 系统：
-- classic: 自研多 Agent 系统（Planner/Researcher/Writer/Reviewer/FactChecker）
-- sn-deepresearch: 基于 sn-deep-research 设计思想的复刻版
+- sn-deepresearch: 基于 SenseNova sn-deep-research 技能的公司深度分析智能体
+- cr-agent: 从 0-1 自研设计的公司调研智能体（5 角色 + 内置 render）
 
 API 端点：
 - GET  /api/health - 健康检查
@@ -32,8 +32,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 
-from agent_system import ResearchOrchestrator
-from sn_deepresearch import run_sn_deepresearch, create_task as sn_create_task, get_task as sn_get_task, update_task as sn_update_task, add_event as sn_add_event, list_tasks as sn_list_tasks
+from sn_deepresearch import run_sn_deepresearch
 from cr_deepresearch import run_cr_deepresearch
 
 # 配置日志
@@ -167,7 +166,6 @@ def health_check():
         "total_tasks": task_count,
         "running_tasks": running_count,
         "agents": {
-            "classic": ["planner", "researcher", "writer", "reviewer", "fact_checker"],
             "sn-deepresearch": ["scout", "planner", "researcher", "reviewer", "report_planner", "report_writer", "fact_checker"],
             "cr-agent": ["scout", "planner", "researcher", "writer", "reviewer"],
         },
@@ -196,12 +194,9 @@ def start_research():
 
     Request Body:
         company_name: 公司名称
-        depth: 研究深度
-               - classic模式: basic/standard/deep
-               - sn-deepresearch模式: quick/normal/heavy
-               - cr-agent模式: quick/normal/heavy
+        depth: 研究深度 (quick/normal/heavy)
         api_key: SenseNova API Key
-        agent_mode: 代理模式 (classic / sn-deepresearch / cr-agent)，默认 classic
+        agent_mode: 代理模式 (sn-deepresearch / cr-agent)，默认 sn-deepresearch
         model: 模型名称，默认 sensenova-6.7-flash-lite
 
     Returns:
@@ -212,7 +207,7 @@ def start_research():
     company_name = (data.get("company_name") or "").strip()
     depth = (data.get("depth") or "").strip().lower()
     api_key = (data.get("api_key") or "").strip()
-    agent_mode = (data.get("agent_mode") or "classic").strip().lower()
+    agent_mode = (data.get("agent_mode") or "sn-deepresearch").strip().lower()
     model = (data.get("model") or "").strip()
 
     # 参数校验
@@ -220,19 +215,13 @@ def start_research():
         return jsonify({"error": "公司名称不能为空"}), 400
 
     # 校验 agent_mode
-    if agent_mode not in ("classic", "sn-deepresearch", "cr-agent"):
-        return jsonify({"error": "agent_mode 必须是 classic / sn-deepresearch / cr-agent"}), 400
+    if agent_mode not in ("sn-deepresearch", "cr-agent"):
+        return jsonify({"error": "agent_mode 必须是 sn-deepresearch 或 cr-agent"}), 400
 
-    # 根据模式校验 depth
-    if agent_mode == "classic":
-        valid_depths = ("basic", "standard", "deep")
-        if not depth:
-            depth = "basic"
-    else:
-        # sn-deepresearch 和 cr-agent 共用 quick/normal/heavy
-        valid_depths = ("quick", "normal", "heavy")
-        if not depth:
-            depth = "normal"
+    # 校验 depth（两套模式共用 quick/normal/heavy）
+    valid_depths = ("quick", "normal", "heavy")
+    if not depth:
+        depth = "normal"
 
     if depth not in valid_depths:
         return jsonify({"error": f"depth 参数必须是 {', '.join(valid_depths)}"}), 400
@@ -301,18 +290,7 @@ def start_research():
                 task["event_queue"].put(event)
 
             # 根据模式执行不同的研究流程
-            if agent_mode == "classic":
-                # 经典自研模式
-                orchestrator = ResearchOrchestrator()
-                result = orchestrator.run(
-                    company_name=company_name,
-                    depth=depth,
-                    api_key=api_key,
-                    model=model,
-                    event_callback=event_callback,
-                    total_timeout=TOTAL_TIMEOUT,
-                )
-            elif agent_mode == "cr-agent":
+            if agent_mode == "cr-agent":
                 # CR-Agent 自研模式（5 角色 + 内置 render）
                 result = run_cr_deepresearch(
                     api_key=api_key,
@@ -322,7 +300,7 @@ def start_research():
                     emit=event_callback,
                 )
             else:
-                # SN-DeepResearch 模式
+                # SN-DeepResearch 模式（基于 sn-deep-research 技能）
                 result = run_sn_deepresearch(
                     api_key=api_key,
                     company_name=company_name,

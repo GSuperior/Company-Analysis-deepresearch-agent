@@ -948,8 +948,7 @@ input { font-family: inherit; outline: none; border: none; }
         <div class="topbar-right">
             <!-- Agent 模式切换 -->
             <div class="agent-mode-switch" id="agentModeSwitch">
-                <button class="agent-mode-btn active" data-mode="classic" title="经典五智能体架构">经典版</button>
-                <button class="agent-mode-btn" data-mode="sn-deepresearch" title="基于 sn-deep-research 技能架构">SN深度研究</button>
+                <button class="agent-mode-btn active" data-mode="sn-deepresearch" title="基于 sn-deep-research 技能架构">SN深度研究</button>
                 <button class="agent-mode-btn" data-mode="cr-agent" title="自研五角色架构（EvidenceCard 增量 + 内置 render）">自研CR</button>
             </div>
             <!-- 模型选择 -->
@@ -984,32 +983,7 @@ input { font-family: inherit; outline: none; border: none; }
                 </div>
                 <div class="form-group">
                     <label class="form-label">研究深度</label>
-                    <!-- 经典模式深度 -->
-                    <div class="depth-radio-group depth-classic" id="depthSelectorClassic">
-                        <label class="depth-radio">
-                            <input type="radio" name="depth" value="basic" checked>
-                            <span class="depth-radio-label">
-                                <span class="depth-name">基础</span>
-                                <span class="depth-desc">3维度 · 约90秒</span>
-                            </span>
-                        </label>
-                        <label class="depth-radio">
-                            <input type="radio" name="depth" value="standard">
-                            <span class="depth-radio-label">
-                                <span class="depth-name">标准</span>
-                                <span class="depth-desc">5维度 · 约3分钟</span>
-                            </span>
-                        </label>
-                        <label class="depth-radio">
-                            <input type="radio" name="depth" value="deep">
-                            <span class="depth-radio-label">
-                                <span class="depth-name">深度</span>
-                                <span class="depth-desc">7维度 · 约5分钟</span>
-                            </span>
-                        </label>
-                    </div>
-                    <!-- SN深度研究模式深度 -->
-                    <div class="depth-radio-group depth-sn" id="depthSelectorSn" style="display:none;">
+                    <div class="depth-radio-group depth-sn" id="depthSelectorSn">
                         <label class="depth-radio">
                             <input type="radio" name="depth_sn" value="quick" checked>
                             <span class="depth-radio-label">
@@ -1094,79 +1068,8 @@ input { font-family: inherit; outline: none; border: none; }
                     <span class="section-subtitle" id="flowSubtitle">等待启动...</span>
                 </div>
                 <div class="flow-diagram">
-                    <!-- 经典模式流程图 -->
-                    <div id="flowClassic" class="flow-mode">
-                        <!-- 阶段1: 规划 -->
-                        <div class="phase-group" data-phase="planning">
-                            <div class="phase-label">规划</div>
-                            <div class="agent-node" data-agent="planner" data-status="pending">
-                                <div class="agent-icon">📋</div>
-                                <div class="agent-name">Planner</div>
-                                <div class="agent-desc">研究总监</div>
-                                <div class="agent-status-indicator"></div>
-                                <div class="agent-check">✓</div>
-                            </div>
-                        </div>
-
-                        <div class="flow-connector"></div>
-
-                        <!-- 阶段2: 调研 -->
-                        <div class="phase-group" data-phase="research">
-                            <div class="phase-label">调研</div>
-                            <div class="agent-node" data-agent="researcher" data-status="pending">
-                                <div class="agent-icon">🔍</div>
-                                <div class="agent-name">Researcher</div>
-                                <div class="agent-desc">信息检索专家</div>
-                                <div class="agent-status-indicator"></div>
-                                <div class="agent-check">✓</div>
-                            </div>
-                        </div>
-
-                        <div class="flow-connector"></div>
-
-                        <!-- 阶段3: 写作 -->
-                        <div class="phase-group" data-phase="writing">
-                            <div class="phase-label">写作</div>
-                            <div class="agent-node" data-agent="writer" data-status="pending">
-                                <div class="agent-icon">✍️</div>
-                                <div class="agent-name">Writer</div>
-                                <div class="agent-desc">资深研究员</div>
-                                <div class="agent-status-indicator"></div>
-                                <div class="agent-check">✓</div>
-                            </div>
-                        </div>
-
-                        <div class="flow-connector"></div>
-
-                        <!-- 阶段4: 审核 -->
-                        <div class="phase-group" data-phase="reviewing">
-                            <div class="phase-label">审核</div>
-                            <div class="agent-node" data-agent="reviewer" data-status="pending">
-                                <div class="agent-icon">🔎</div>
-                                <div class="agent-name">Reviewer</div>
-                                <div class="agent-desc">质量审核专家</div>
-                                <div class="agent-status-indicator"></div>
-                                <div class="agent-check">✓</div>
-                            </div>
-                        </div>
-
-                        <div class="flow-connector"></div>
-
-                        <!-- 阶段5: 事实核查 -->
-                        <div class="phase-group" data-phase="fact_checking">
-                            <div class="phase-label">核查</div>
-                            <div class="agent-node" data-agent="fact_checker" data-status="pending">
-                                <div class="agent-icon">✅</div>
-                                <div class="agent-name">FactChecker</div>
-                                <div class="agent-desc">事实核查员</div>
-                                <div class="agent-status-indicator"></div>
-                                <div class="agent-check">✓</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- SN深度研究模式流程图 -->
-                    <div id="flowSn" class="flow-mode" style="display:none;">
+                    <!-- SN深度研究模式流程图（sn-deepresearch 与 cr-agent 共用） -->
+                    <div id="flowSn" class="flow-mode">
                         <!-- 阶段1: 预研侦察 -->
                         <div class="phase-group" data-phase="scout">
                             <div class="phase-label">侦察</div>
@@ -1405,7 +1308,7 @@ input { font-family: inherit; outline: none; border: none; }
     <script>
 /* ============================================================
  * DeepResearch Agent v2 - 前端核心逻辑
- * 双Agent架构：经典版(5智能体) + SN深度研究版(7智能体)
+ * 双Agent架构：SN深度研究版 + 自研CR版
  * ============================================================ */
 
 (function() {
@@ -1415,35 +1318,7 @@ input { font-family: inherit; outline: none; border: none; }
     const API_BASE = '/api';
     const STORAGE_KEY = 'deepresearch_agent_v2_state';
 
-    // ==================== Agent 配置映射（经典模式） ====================
-    const PHASE_MAP_CLASSIC = {
-        'initializing': { agent: null, phaseGroup: null, phaseName: '初始化' },
-        'planning': { agent: 'planner', phaseGroup: 'planning', phaseName: '规划阶段' },
-        'researching': { agent: 'researcher', phaseGroup: 'research', phaseName: '调研阶段' },
-        'writing': { agent: 'writer', phaseGroup: 'writing', phaseName: '报告撰写' },
-        'reviewing': { agent: 'reviewer', phaseGroup: 'reviewing', phaseName: '质量审核' },
-        'revising': { agent: 'writer', phaseGroup: 'writing', phaseName: '报告修改' },
-        'fact_checking': { agent: 'fact_checker', phaseGroup: 'fact_checking', phaseName: '事实核查' },
-        'completed': { agent: null, phaseGroup: 'all', phaseName: '已完成' },
-    };
-
-    const AGENT_NAMES_CLASSIC = {
-        'planner': 'Planner · 研究总监',
-        'researcher': 'Researcher · 信息检索专家',
-        'writer': 'Writer · 资深研究员',
-        'reviewer': 'Reviewer · 质量审核专家',
-        'fact_checker': 'FactChecker · 事实核查员',
-    };
-
-    const AGENT_TOOLS_CLASSIC = {
-        'planner': ['web_search'],
-        'researcher': ['web_search', 'company_lookup', 'financial_data'],
-        'writer': [],
-        'reviewer': [],
-        'fact_checker': ['web_search'],
-    };
-
-    // ==================== Agent 配置映射（SN深度研究模式） ====================
+    // ==================== Agent 配置映射（SN深度研究模式，cr-agent 共用） ====================
     const PHASE_MAP_SN = {
         'initializing': { agent: null, phaseGroup: null, phaseName: '初始化' },
         'scouting': { agent: 'scout', phaseGroup: 'scout', phaseName: '预研侦察' },
@@ -1476,19 +1351,19 @@ input { font-family: inherit; outline: none; border: none; }
         'fact_checker': ['web_search'],
     };
 
-    // 当前模式的配置
-    let PHASE_MAP = PHASE_MAP_CLASSIC;
-    let AGENT_NAMES = AGENT_NAMES_CLASSIC;
-    let AGENT_TOOLS = AGENT_TOOLS_CLASSIC;
+    // 当前模式的配置（默认 SN，cr-agent 共用同一套流程图配置）
+    let PHASE_MAP = PHASE_MAP_SN;
+    let AGENT_NAMES = AGENT_NAMES_SN;
+    let AGENT_TOOLS = AGENT_TOOLS_SN;
 
     // ==================== 状态管理 ====================
     const state = {
-        agentMode: 'classic', // classic / sn-deepresearch / cr-agent
+        agentMode: 'sn-deepresearch', // sn-deepresearch / cr-agent
         model: 'sensenova-6.7-flash-lite',
         isResearching: false,
         taskId: null,
         companyName: '商汤科技',
-        depth: 'basic',
+        depth: 'quick',
         apiKey: '',
         currentPhase: null,
         currentAgent: null,
@@ -1521,7 +1396,6 @@ input { font-family: inherit; outline: none; border: none; }
         dom.apiKeyToggle = document.getElementById('apiKeyToggle');
         dom.eyeIcon = document.getElementById('eyeIcon');
         dom.companyInput = document.getElementById('companyInput');
-        dom.depthSelectorClassic = document.getElementById('depthSelectorClassic');
         dom.depthSelectorSn = document.getElementById('depthSelectorSn');
         dom.startBtn = document.getElementById('startBtn');
         dom.statusDot = document.querySelector('#statusIndicator .status-dot');
@@ -1535,7 +1409,6 @@ input { font-family: inherit; outline: none; border: none; }
         dom.connDot = document.getElementById('connDot');
         dom.connText = document.getElementById('connText');
         dom.flowSubtitle = document.getElementById('flowSubtitle');
-        dom.flowClassic = document.getElementById('flowClassic');
         dom.flowSn = document.getElementById('flowSn');
         dom.detailTabs = document.querySelectorAll('.detail-tab');
         dom.detailPanes = document.querySelectorAll('.detail-pane');
@@ -1606,8 +1479,8 @@ input { font-family: inherit; outline: none; border: none; }
                 const data = JSON.parse(saved);
                 state.apiKey = data.apiKey || '';
                 state.companyName = data.companyName || '商汤科技';
-                state.depth = data.depth || 'basic';
-                state.agentMode = data.agentMode || 'classic';
+                state.depth = data.depth || 'quick';
+                state.agentMode = data.agentMode || 'sn-deepresearch';
                 state.model = data.model || 'sensenova-6.7-flash-lite';
             }
         } catch (e) {}
@@ -1778,7 +1651,7 @@ input { font-family: inherit; outline: none; border: none; }
     }
 
     function resetFlowDiagram() {
-        const flowContainer = state.agentMode === 'classic' ? dom.flowClassic : dom.flowSn;
+        const flowContainer = dom.flowSn;
         const agentNodes = flowContainer.querySelectorAll('.agent-node');
         const phaseGroups = flowContainer.querySelectorAll('.phase-group');
         const flowConnectors = flowContainer.querySelectorAll('.flow-connector');
@@ -1798,16 +1671,10 @@ input { font-family: inherit; outline: none; border: none; }
 
         dom.flowSubtitle.textContent = message || phaseConfig.phaseName;
 
-        const flowContainer = state.agentMode === 'classic' ? dom.flowClassic : dom.flowSn;
-        const isClassic = state.agentMode === 'classic';
+        const flowContainer = dom.flowSn;
 
-        const phases = isClassic
-            ? ['planning', 'research', 'writing', 'reviewing', 'fact_checking']
-            : ['scout', 'plan', 'research_sn', 'review_sn', 'report_plan', 'report_write', 'fact_check_sn'];
-
-        const agents = isClassic
-            ? ['planner', 'researcher', 'writer', 'reviewer', 'fact_checker']
-            : ['scout', 'planner', 'researcher', 'reviewer', 'report_planner', 'report_writer', 'fact_checker'];
+        const phases = ['scout', 'plan', 'research_sn', 'review_sn', 'report_plan', 'report_write', 'fact_check_sn'];
+        const agents = ['scout', 'planner', 'researcher', 'reviewer', 'report_planner', 'report_writer', 'fact_checker'];
 
         if (phase === 'completed') {
             phases.forEach(p => setPhaseGroupStatus(p, 'completed', flowContainer));
@@ -1836,12 +1703,6 @@ input { font-family: inherit; outline: none; border: none; }
             else if (idx === currentIdx) setAgentStatus(a, 'running', flowContainer);
             else setAgentStatus(a, 'pending', flowContainer);
         });
-
-        // 经典模式修改阶段也标记writer为运行中
-        if (isClassic && phase === 'revising') {
-            setPhaseGroupStatus('writing', 'active', flowContainer);
-            setAgentStatus('writer', 'running', flowContainer);
-        }
     }
 
     function setPhaseGroupStatus(phaseName, status, container) {
@@ -2476,16 +2337,10 @@ input { font-family: inherit; outline: none; border: none; }
         const agentMode = state.agentMode;
         const model = dom.modelSelect.value;
 
-        // 根据模式获取深度
+        // 获取深度（两套模式共用 quick/normal/heavy）
         let depth;
-        if (agentMode === 'classic') {
-            const depthInput = dom.depthSelectorClassic.querySelector('input[name="depth"]:checked');
-            depth = depthInput ? depthInput.value : 'basic';
-        } else {
-            // sn-deepresearch 和 cr-agent 共用 quick/normal/heavy
-            const depthInput = dom.depthSelectorSn.querySelector('input[name="depth_sn"]:checked');
-            depth = depthInput ? depthInput.value : 'normal';
-        }
+        const depthInput = dom.depthSelectorSn.querySelector('input[name="depth_sn"]:checked');
+        depth = depthInput ? depthInput.value : 'normal';
 
         state.companyName = companyName;
         state.depth = depth;
@@ -2496,9 +2351,8 @@ input { font-family: inherit; outline: none; border: none; }
         saveState();
 
         // 清除选中状态
-        const flowContainer = agentMode === 'classic' ? dom.flowClassic : dom.flowSn;
+        const flowContainer = dom.flowSn;
         flowContainer.querySelectorAll('.agent-node').forEach(n => n.classList.remove('selected'));
-        // 通用重置（agentMode 变量在此处已声明为 const，沿用即可）
 
         resetFlowDiagram();
         clearLogs();
@@ -2522,12 +2376,8 @@ input { font-family: inherit; outline: none; border: none; }
 
         startElapsedTimer();
 
-        const modeLabel = agentMode === 'classic' ? '经典版'
-            : agentMode === 'sn-deepresearch' ? 'SN深度研究版'
-            : '自研CR版';
-        const depthLabels = agentMode === 'classic'
-            ? { basic: '基础', standard: '标准', deep: '深度' }
-            : { quick: '快速', normal: '标准', heavy: '深度' };
+        const modeLabel = agentMode === 'sn-deepresearch' ? 'SN深度研究版' : '自研CR版';
+        const depthLabels = { quick: '快速', normal: '标准', heavy: '深度' };
 
         addLog({
             timestamp_unix: Date.now() / 1000,
@@ -2982,13 +2832,7 @@ body {
             if (e.key === 'Enter' && !state.isResearching) startResearch();
         });
 
-        // 经典模式深度选择
-        dom.depthSelectorClassic.addEventListener('change', () => {
-            const depthInput = dom.depthSelectorClassic.querySelector('input[name="depth"]:checked');
-            if (depthInput) { state.depth = depthInput.value; saveState(); }
-        });
-
-        // SN模式深度选择
+        // 深度选择
         dom.depthSelectorSn.addEventListener('change', () => {
             const depthInput = dom.depthSelectorSn.querySelector('input[name="depth_sn"]:checked');
             if (depthInput) { state.depth = depthInput.value; saveState(); }
@@ -3000,31 +2844,15 @@ body {
         state.agentMode = mode;
         state.selectedAgent = null;
 
-        // 更新模式配置
-        if (mode === 'classic') {
-            PHASE_MAP = PHASE_MAP_CLASSIC;
-            AGENT_NAMES = AGENT_NAMES_CLASSIC;
-            AGENT_TOOLS = AGENT_TOOLS_CLASSIC;
-        } else {
-            // sn-deepresearch 和 cr-agent 共用同一套流程图配置
-            PHASE_MAP = PHASE_MAP_SN;
-            AGENT_NAMES = AGENT_NAMES_SN;
-            AGENT_TOOLS = AGENT_TOOLS_SN;
-        }
+        // sn-deepresearch 和 cr-agent 共用同一套流程图配置
+        PHASE_MAP = PHASE_MAP_SN;
+        AGENT_NAMES = AGENT_NAMES_SN;
+        AGENT_TOOLS = AGENT_TOOLS_SN;
 
         // 更新按钮状态
         dom.agentModeBtns.forEach(btn => {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
-
-        // 切换流程图显示（classic 独占，sn-deepresearch 和 cr-agent 共用 sn 流程图）
-        const isClassic = mode === 'classic';
-        dom.flowClassic.style.display = isClassic ? '' : 'none';
-        dom.flowSn.style.display = isClassic ? 'none' : '';
-
-        // 切换深度选择器
-        dom.depthSelectorClassic.style.display = isClassic ? '' : 'none';
-        dom.depthSelectorSn.style.display = isClassic ? 'none' : '';
 
         // 重置详情面板
         resetDetailPanes();
@@ -3038,7 +2866,7 @@ body {
 
     // 绑定Agent节点点击事件
     function bindAgentNodeClick() {
-        const flowContainer = state.agentMode === 'classic' ? dom.flowClassic : dom.flowSn;
+        const flowContainer = dom.flowSn;
         const agentNodes = flowContainer.querySelectorAll('.agent-node');
         agentNodes.forEach(node => {
             node.addEventListener('click', () => {
@@ -3053,7 +2881,7 @@ body {
         state.selectedAgent = agentId;
 
         // 更新选中状态
-        const flowContainer = state.agentMode === 'classic' ? dom.flowClassic : dom.flowSn;
+        const flowContainer = dom.flowSn;
         flowContainer.querySelectorAll('.agent-node').forEach(n => {
             n.classList.remove('selected');
         });
@@ -3230,7 +3058,7 @@ body {
         if (state.companyName) dom.companyInput.value = state.companyName;
         if (state.apiKey) dom.apiKeyInput.value = state.apiKey;
         if (state.depth) {
-            const depthName = state.agentMode === 'classic' ? 'depth' : 'depth_sn';
+            const depthName = 'depth_sn';
             const depthRadio = document.querySelector(`input[name="${depthName}"][value="${state.depth}"]`);
             if (depthRadio) depthRadio.checked = true;
         }
