@@ -39,10 +39,24 @@ def _get_reports_root() -> Path:
 
     Vercel Serverless Function 运行在只读文件系统上，只有 /tmp 可写。
     本地开发时使用项目根目录的 reports/。
+
+    注意：os.access() 只检查权限位，不检查文件系统是否只读挂载，
+    因此用实际写入测试来判断可写性。
     """
-    if os.environ.get("VERCEL") or not os.access(REPO_ROOT, os.W_OK):
-        return Path("/tmp/reports/deep-research-reports")
-    return REPO_ROOT / "reports" / "deep-research-reports"
+    tmp_root = Path("/tmp/reports/deep-research-reports")
+    local_root = REPO_ROOT / "reports" / "deep-research-reports"
+    # 1. Vercel 环境变量快速判断
+    if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+        return tmp_root
+    # 2. 实际写入测试（os.access 不可靠：只读挂载的文件系统权限位仍可能是 writable）
+    try:
+        local_root.mkdir(parents=True, exist_ok=True)
+        _probe = local_root / ".write_probe"
+        _probe.write_text("ok", encoding="utf-8")
+        _probe.unlink()
+        return local_root
+    except (OSError, PermissionError):
+        return tmp_root
 
 
 def _emit(event_type: str, data: dict) -> None:
