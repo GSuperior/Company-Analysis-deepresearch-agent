@@ -32,7 +32,17 @@ ROLE_DIR = SKILL_DIR / "agents"
 VALIDATE_EVIDENCE = SKILL_DIR / "scripts" / "validate_evidence.py"
 VALIDATE_OUTLINE = SKILL_DIR / "scripts" / "validate_outline.py"
 PREPARE_CITATIONS = SKILL_DIR / "sn-prepare-citations" / "scripts" / "prepare_citations.py"
-REPORTS_ROOT = REPO_ROOT / "reports" / "deep-research-reports"
+
+
+def _get_reports_root() -> Path:
+    """获取可写的报告根目录。
+
+    Vercel Serverless Function 运行在只读文件系统上，只有 /tmp 可写。
+    本地开发时使用项目根目录的 reports/。
+    """
+    if os.environ.get("VERCEL") or not os.access(REPO_ROOT, os.W_OK):
+        return Path("/tmp/reports/deep-research-reports")
+    return REPO_ROOT / "reports" / "deep-research-reports"
 
 
 def _emit(event_type: str, data: dict) -> None:
@@ -81,14 +91,15 @@ def _log(stage: str, msg: str) -> None:
 # ── 报告目录 ────────────────────────────────────────────────────────────
 def make_report_dir(topic: str) -> Path:
     """按 §3 创建 YYYY-MM-DD-{topic}-{hex4} 报告目录骨架。"""
-    REPORTS_ROOT.mkdir(parents=True, exist_ok=True)
+    reports_root = _get_reports_root()
+    reports_root.mkdir(parents=True, exist_ok=True)
     # topic 可能是中文长句，只取前几个词做 slug
     short = topic.replace("以", "").replace("作为", " ").replace("进行", " ")[:30]
     slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in short).strip("-")[:40]
     if not slug:
         slug = "research"
     hex4 = secrets.token_hex(2)
-    d = REPORTS_ROOT / f"{datetime.now().strftime('%Y-%m-%d')}-{slug}-{hex4}"
+    d = reports_root / f"{datetime.now().strftime('%Y-%m-%d')}-{slug}-{hex4}"
     for sub in ("sub_reports", "board", "sections"):
         (d / sub).mkdir(parents=True, exist_ok=True)
     return d

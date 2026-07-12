@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 import time
@@ -30,7 +31,17 @@ from cr_agent import llm, tools
 _AGENT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = _AGENT_DIR.parent
 PROMPT_DIR = _AGENT_DIR / "prompts"
-REPORTS_ROOT = REPO_ROOT / "reports" / "cr-agent-reports"
+
+
+def _get_reports_root() -> Path:
+    """获取可写的报告根目录。
+
+    Vercel Serverless Function 运行在只读文件系统上，只有 /tmp 可写。
+    本地开发时使用项目根目录的 reports/。
+    """
+    if os.environ.get("VERCEL") or not os.access(REPO_ROOT, os.W_OK):
+        return Path("/tmp/reports/cr-agent-reports")
+    return REPO_ROOT / "reports" / "cr-agent-reports"
 
 # 每个角色的迭代上限
 ITER_BUDGET = {
@@ -94,13 +105,14 @@ def write_log(report_dir: Path, stage: str, status: str, extra: str = "") -> Non
 # ── 报告目录 ────────────────────────────────────────────────────────────
 def make_report_dir(topic: str) -> Path:
     """创建 YYYY-MM-DD-{slug}-{hex4} 报告目录骨架。"""
-    REPORTS_ROOT.mkdir(parents=True, exist_ok=True)
+    reports_root = _get_reports_root()
+    reports_root.mkdir(parents=True, exist_ok=True)
     short = topic.replace("以", "").replace("作为", " ").replace("进行", " ")[:30]
     slug = "".join(c if c.isalnum() or c in "-_" else "-" for c in short).strip("-")[:40]
     if not slug:
         slug = "research"
     hex4 = secrets.token_hex(2)
-    d = REPORTS_ROOT / f"{datetime.now().strftime('%Y-%m-%d')}-{slug}-{hex4}"
+    d = reports_root / f"{datetime.now().strftime('%Y-%m-%d')}-{slug}-{hex4}"
     for sub in ("sections",):
         (d / sub).mkdir(parents=True, exist_ok=True)
     return d
