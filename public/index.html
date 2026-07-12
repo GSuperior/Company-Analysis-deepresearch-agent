@@ -950,6 +950,7 @@ input { font-family: inherit; outline: none; border: none; }
             <div class="agent-mode-switch" id="agentModeSwitch">
                 <button class="agent-mode-btn active" data-mode="classic" title="经典五智能体架构">经典版</button>
                 <button class="agent-mode-btn" data-mode="sn-deepresearch" title="基于 sn-deep-research 技能架构">SN深度研究</button>
+                <button class="agent-mode-btn" data-mode="cr-agent" title="自研五角色架构（EvidenceCard 增量 + 内置 render）">自研CR</button>
             </div>
             <!-- 模型选择 -->
             <div class="model-select-wrapper">
@@ -1482,7 +1483,7 @@ input { font-family: inherit; outline: none; border: none; }
 
     // ==================== 状态管理 ====================
     const state = {
-        agentMode: 'classic', // classic / sn-deepresearch
+        agentMode: 'classic', // classic / sn-deepresearch / cr-agent
         model: 'sensenova-6.7-flash-lite',
         isResearching: false,
         taskId: null,
@@ -2477,12 +2478,13 @@ input { font-family: inherit; outline: none; border: none; }
 
         // 根据模式获取深度
         let depth;
-        if (agentMode === 'sn-deepresearch') {
-            const depthInput = dom.depthSelectorSn.querySelector('input[name="depth_sn"]:checked');
-            depth = depthInput ? depthInput.value : 'quick';
-        } else {
+        if (agentMode === 'classic') {
             const depthInput = dom.depthSelectorClassic.querySelector('input[name="depth"]:checked');
             depth = depthInput ? depthInput.value : 'basic';
+        } else {
+            // sn-deepresearch 和 cr-agent 共用 quick/normal/heavy
+            const depthInput = dom.depthSelectorSn.querySelector('input[name="depth_sn"]:checked');
+            depth = depthInput ? depthInput.value : 'normal';
         }
 
         state.companyName = companyName;
@@ -2496,6 +2498,7 @@ input { font-family: inherit; outline: none; border: none; }
         // 清除选中状态
         const flowContainer = agentMode === 'classic' ? dom.flowClassic : dom.flowSn;
         flowContainer.querySelectorAll('.agent-node').forEach(n => n.classList.remove('selected'));
+        // 通用重置（agentMode 变量在此处已声明为 const，沿用即可）
 
         resetFlowDiagram();
         clearLogs();
@@ -2519,10 +2522,12 @@ input { font-family: inherit; outline: none; border: none; }
 
         startElapsedTimer();
 
-        const modeLabel = agentMode === 'sn-deepresearch' ? 'SN深度研究版' : '经典版';
-        const depthLabels = agentMode === 'sn-deepresearch'
-            ? { quick: '快速', normal: '标准', heavy: '深度' }
-            : { basic: '基础', standard: '标准', deep: '深度' };
+        const modeLabel = agentMode === 'classic' ? '经典版'
+            : agentMode === 'sn-deepresearch' ? 'SN深度研究版'
+            : '自研CR版';
+        const depthLabels = agentMode === 'classic'
+            ? { basic: '基础', standard: '标准', deep: '深度' }
+            : { quick: '快速', normal: '标准', heavy: '深度' };
 
         addLog({
             timestamp_unix: Date.now() / 1000,
@@ -2727,6 +2732,33 @@ body {
 }
 .report-container tr:nth-child(even) { background-color: #f8fafc; }
 .report-container tr:hover { background-color: rgba(59, 130, 246, 0.04); }
+.report-container pre {
+  background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: var(--radius-md);
+  overflow-x: auto; margin: 16px 0; font-size: 13px; line-height: 1.6;
+}
+.report-container pre code { background: none; padding: 0; color: inherit; }
+.report-container code {
+  background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.9em;
+  color: var(--accent-dark);
+}
+.report-container .mermaid {
+  background: #f8fafc; padding: 20px; border-radius: var(--radius-md);
+  border: 1px solid var(--border); margin: 16px 0; text-align: center;
+  font-family: monospace; white-space: pre-wrap; color: var(--text-secondary);
+}
+.report-container sup {
+  color: var(--accent); font-size: 0.75em; vertical-align: super;
+  margin: 0 1px; font-weight: 600;
+}
+.report-container a {
+  color: var(--accent); text-decoration: none;
+  border-bottom: 1px dashed var(--accent-light);
+  transition: all 0.2s;
+}
+.report-container a:hover {
+  color: var(--accent-dark); border-bottom-style: solid;
+}
 .report-container hr {
   border: none; border-top: 1px solid var(--border);
   margin: 32px 0;
@@ -2769,6 +2801,20 @@ body {
 
     function markdownToHTML(md) {
         let html = md;
+
+        // 先提取代码块和 mermaid 块，避免被其他规则破坏
+        const codeBlocks = [];
+        html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (m, lang, code) => {
+            const idx = codeBlocks.length;
+            if (lang === 'mermaid') {
+                // mermaid 块渲染为 pre 占位，实际渲染由前端 mermaid.js 处理
+                codeBlocks.push(`<div class="mermaid">${code.trim()}</div>`);
+            } else {
+                codeBlocks.push(`<pre><code>${code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</code></pre>`);
+            }
+            return `\x00CODEBLOCK${idx}\x00`;
+        });
+
         // 转义 HTML
         html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -2800,23 +2846,48 @@ body {
         // 分隔线
         html = html.replace(/^---$/gm, '<hr/>');
 
+        // 表格处理（markdown table → HTML table）
+        html = html.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)+)/gm, (m, headerRow, sepRow, bodyRows) => {
+            const headers = headerRow.split('|').slice(1, -1).map(h => h.trim());
+            const rows = bodyRows.trim().split('\n').filter(r => r.trim());
+            let table = '<table>\n<thead>\n<tr>';
+            headers.forEach(h => { table += `<th>${h}</th>`; });
+            table += '</tr>\n</thead>\n<tbody>\n';
+            rows.forEach(row => {
+                const cells = row.split('|').slice(1, -1).map(c => c.trim());
+                table += '<tr>';
+                cells.forEach(c => { table += `<td>${c}</td>`; });
+                table += '</tr>\n';
+            });
+            table += '</tbody>\n</table>\n';
+            return table;
+        });
+
         // 无序列表
         html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
         html = html.replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>\n${m}</ul>\n`);
 
         // 引用标记 [^s1]
         html = html.replace(/\[\^s(\d+)\]/g, '<sup>[s$1]</sup>');
+        // 引用标记 [1][2] 格式（仅匹配纯数字引用，不匹配含文字的链接）
+        html = html.replace(/\[(\d+)\](?!\()/g, '<sup>[$1]</sup>');
+        // markdown 链接 [text](url)
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
 
         // 段落（最后处理）
         html = html.split('\n').map(line => {
             if (line.trim() && !line.startsWith('<h') && !line.startsWith('<ul') && !line.startsWith('<ol') &&
                 !line.startsWith('<li') && !line.startsWith('<blockquote') && !line.startsWith('<hr') &&
                 !line.startsWith('<table') && !line.startsWith('<tr') && !line.startsWith('<th') &&
-                !line.startsWith('<td') && !line.startsWith('</') && !line.startsWith('|')) {
+                !line.startsWith('<td') && !line.startsWith('</') && !line.startsWith('|') &&
+                !line.startsWith('<pre') && !line.startsWith('<div') && !line.includes('\x00CODEBLOCK')) {
                 return `<p>${line}</p>`;
             }
             return line;
         }).join('\n');
+
+        // 还原代码块
+        html = html.replace(/\x00CODEBLOCK(\d+)\x00/g, (m, idx) => codeBlocks[parseInt(idx)] || '');
 
         return html;
     }
@@ -2935,6 +3006,7 @@ body {
             AGENT_NAMES = AGENT_NAMES_CLASSIC;
             AGENT_TOOLS = AGENT_TOOLS_CLASSIC;
         } else {
+            // sn-deepresearch 和 cr-agent 共用同一套流程图配置
             PHASE_MAP = PHASE_MAP_SN;
             AGENT_NAMES = AGENT_NAMES_SN;
             AGENT_TOOLS = AGENT_TOOLS_SN;
@@ -2945,13 +3017,14 @@ body {
             btn.classList.toggle('active', btn.dataset.mode === mode);
         });
 
-        // 切换流程图显示
-        dom.flowClassic.style.display = mode === 'classic' ? '' : 'none';
-        dom.flowSn.style.display = mode === 'sn-deepresearch' ? '' : 'none';
+        // 切换流程图显示（classic 独占，sn-deepresearch 和 cr-agent 共用 sn 流程图）
+        const isClassic = mode === 'classic';
+        dom.flowClassic.style.display = isClassic ? '' : 'none';
+        dom.flowSn.style.display = isClassic ? 'none' : '';
 
         // 切换深度选择器
-        dom.depthSelectorClassic.style.display = mode === 'classic' ? '' : 'none';
-        dom.depthSelectorSn.style.display = mode === 'sn-deepresearch' ? '' : 'none';
+        dom.depthSelectorClassic.style.display = isClassic ? '' : 'none';
+        dom.depthSelectorSn.style.display = isClassic ? 'none' : '';
 
         // 重置详情面板
         resetDetailPanes();
@@ -3157,7 +3230,7 @@ body {
         if (state.companyName) dom.companyInput.value = state.companyName;
         if (state.apiKey) dom.apiKeyInput.value = state.apiKey;
         if (state.depth) {
-            const depthName = state.agentMode === 'sn-deepresearch' ? 'depth_sn' : 'depth';
+            const depthName = state.agentMode === 'classic' ? 'depth' : 'depth_sn';
             const depthRadio = document.querySelector(`input[name="${depthName}"][value="${state.depth}"]`);
             if (depthRadio) depthRadio.checked = true;
         }

@@ -40,3 +40,12 @@ logs/
 tmp/
 temp/
 *.tmp
+
+# 报告输出（运行时生成，不入库）
+reports/
+
+# 调试文件
+debug_*.json
+
+# 本地测试脚本
+test_cr_agent.py

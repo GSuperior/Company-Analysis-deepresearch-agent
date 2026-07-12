@@ -34,6 +34,7 @@ from flask_cors import CORS
 
 from agent_system import ResearchOrchestrator
 from sn_deepresearch import run_sn_deepresearch, create_task as sn_create_task, get_task as sn_get_task, update_task as sn_update_task, add_event as sn_add_event, list_tasks as sn_list_tasks
+from cr_deepresearch import run_cr_deepresearch
 
 # 配置日志
 logging.basicConfig(
@@ -111,7 +112,8 @@ TASK_TTL = 3600  # 1小时
 MAX_TASKS = 100
 
 # 总研究超时（秒），防止任务无限运行
-TOTAL_TIMEOUT = 600  # 10分钟
+# sn-deepresearch 真实联网调研需要 10-30 分钟，设为 40 分钟
+TOTAL_TIMEOUT = 2400  # 40分钟
 
 
 def generate_task_id() -> str:
@@ -167,6 +169,7 @@ def health_check():
         "agents": {
             "classic": ["planner", "researcher", "writer", "reviewer", "fact_checker"],
             "sn-deepresearch": ["scout", "planner", "researcher", "reviewer", "report_planner", "report_writer", "fact_checker"],
+            "cr-agent": ["scout", "planner", "researcher", "writer", "reviewer"],
         },
         "deployment": "vercel-serverless",
     })
@@ -196,8 +199,9 @@ def start_research():
         depth: 研究深度
                - classic模式: basic/standard/deep
                - sn-deepresearch模式: quick/normal/heavy
+               - cr-agent模式: quick/normal/heavy
         api_key: SenseNova API Key
-        agent_mode: 代理模式 (classic / sn-deepresearch)，默认 classic
+        agent_mode: 代理模式 (classic / sn-deepresearch / cr-agent)，默认 classic
         model: 模型名称，默认 sensenova-6.7-flash-lite
 
     Returns:
@@ -216,8 +220,8 @@ def start_research():
         return jsonify({"error": "公司名称不能为空"}), 400
 
     # 校验 agent_mode
-    if agent_mode not in ("classic", "sn-deepresearch"):
-        return jsonify({"error": "agent_mode 必须是 classic 或 sn-deepresearch"}), 400
+    if agent_mode not in ("classic", "sn-deepresearch", "cr-agent"):
+        return jsonify({"error": "agent_mode 必须是 classic / sn-deepresearch / cr-agent"}), 400
 
     # 根据模式校验 depth
     if agent_mode == "classic":
@@ -225,6 +229,7 @@ def start_research():
         if not depth:
             depth = "basic"
     else:
+        # sn-deepresearch 和 cr-agent 共用 quick/normal/heavy
         valid_depths = ("quick", "normal", "heavy")
         if not depth:
             depth = "normal"
@@ -307,6 +312,15 @@ def start_research():
                     event_callback=event_callback,
                     total_timeout=TOTAL_TIMEOUT,
                 )
+            elif agent_mode == "cr-agent":
+                # CR-Agent 自研模式（5 角色 + 内置 render）
+                result = run_cr_deepresearch(
+                    api_key=api_key,
+                    company_name=company_name,
+                    depth=depth,
+                    model=model,
+                    emit=event_callback,
+                )
             else:
                 # SN-DeepResearch 模式
                 result = run_sn_deepresearch(
@@ -318,33 +332,54 @@ def start_research():
                 )
 
             # 保存结果
+            # 检测是否为错误结果（sn-deepresearch 在失败时返回含 error 字段的结果）
+            is_error_result = isinstance(result, dict) and (
+                result.get("error") or
+                (not result.get("final_report") and not result.get("report"))
+            )
             with tasks_lock:
-                task["status"] = "completed"
+                if is_error_result:
+                    task["status"] = "error"
+                    task["error"] = result.get("error", "流水线未产出有效报告")
+                else:
+                    task["status"] = "completed"
                 task["result"] = result
                 task["completed_at"] = time.time()
 
             # 发送完成事件
-            complete_event = {
-                "type": "complete",
-                "data": {
-                    "report": result.get("final_report", result.get("report", "")),
-                    "summary": result.get("executive_summary", result.get("summary", "")),
-                    "key_metrics": result.get("key_metrics", []),
-                    "logs": result.get("logs", []),
-                    "total_duration_ms": result.get("total_duration_ms", 0),
-                    "review": result.get("review", {}),
-                    "fact_check": result.get("fact_check", {}),
-                    "agent_mode": agent_mode,
-                    "model": model,
-                },
-                "timestamp": datetime.now().isoformat(),
-            }
-            with tasks_lock:
-                task["events"].append(complete_event)
-            task["event_queue"].put(complete_event)
-            task["event_queue"].put({"type": "__end__", "data": {}})
-
-            logger.info(f"Task {task_id}: Completed with status 'completed'")
+            if is_error_result:
+                # 错误结果：发送 error 事件而非 complete
+                error_event = {
+                    "type": "error",
+                    "data": {"message": result.get("error", "流水线未产出有效报告")},
+                    "timestamp": datetime.now().isoformat(),
+                }
+                with tasks_lock:
+                    task["events"].append(error_event)
+                task["event_queue"].put(error_event)
+                task["event_queue"].put({"type": "__end__", "data": {}})
+                logger.info(f"Task {task_id}: Completed with status 'error'")
+            else:
+                complete_event = {
+                    "type": "complete",
+                    "data": {
+                        "report": result.get("final_report", result.get("report", "")),
+                        "summary": result.get("executive_summary", result.get("summary", "")),
+                        "key_metrics": result.get("key_metrics", []),
+                        "logs": result.get("logs", []),
+                        "total_duration_ms": result.get("total_duration_ms", 0),
+                        "review": result.get("review", {}),
+                        "fact_check": result.get("fact_check", {}),
+                        "agent_mode": agent_mode,
+                        "model": model,
+                    },
+                    "timestamp": datetime.now().isoformat(),
+                }
+                with tasks_lock:
+                    task["events"].append(complete_event)
+                task["event_queue"].put(complete_event)
+                task["event_queue"].put({"type": "__end__", "data": {}})
+                logger.info(f"Task {task_id}: Completed with status 'completed'")
 
         except Exception as e:
             logger.error(f"Task {task_id}: Failed with error: {e}", exc_info=True)

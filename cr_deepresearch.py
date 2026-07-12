@@ -1,18 +1,22 @@
-"""SN-DeepResearch 适配层：桥接 web 端接口到真实 sn-deep-research 流水线。
+"""CR-Agent 适配层：桥接 web 端接口到 cr_agent 自研流水线。
 
-这是基于 SenseNova sn-deep-research 技能的完整实现，所有数据均来自真实
+这是从 0-1 设计的自研公司调研智能体，所有数据均来自真实
 web_search/web_fetch，严禁模拟数据。
 
-流水线（对齐 sn-deep-research §4.2 normal 模式）：
-  scout → plan → research(×N) → evidence validator → review(子报告)
-        → report-planner → outline validator → report-writer(full_outline)
-        → review(终稿) → render
+流水线（5 角色 + 内置 render）：
+  scout → planner → researcher(×N) → writer(×N sections) → reviewer → render(内置)
+
+设计创新点（vs sn-deepresearch）：
+- EvidenceCard 增量追加（JSONL），而非一次性写大 JSON
+- 预算前置约束（Budget 在角色派发前设置）
+- Section-by-section 写作（writer 按章节逐段派发）
+- Controller 内置 render（[card:dN.cM] → [N] 引用替换 + TOC + 来源列表）
 
 核心文件：
-- sn_agent/controller.py: 流水线编排
-- sn_agent/llm.py: LLM 智能体循环（function-calling + 工具）
-- sn_agent/tools.py: 工具层（web_search/web_fetch/read_file/write_file/...）
-- sn_agent/skill/: sn-deep-research 技能 spec + scripts + schemas
+- cr_agent/controller.py: 流水线编排
+- cr_agent/llm.py: LLM 智能体循环（function-calling + 工具 + 预算）
+- cr_agent/tools.py: 工具层（web_search/web_fetch/add_card/write_section/...）
+- cr_agent/prompts/: 5 角色 prompt
 """
 import json
 import os
@@ -22,12 +26,12 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Callable
 
-# 把 sn_agent 包加入 sys.path（兼容直接运行和被 import 两种场景）
+# 把 cr_agent 包加入 sys.path
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
-from sn_agent import controller, llm
+from cr_agent import controller, llm
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +45,9 @@ _tasks: Dict[str, Dict[str, Any]] = {}
 
 def create_task() -> str:
     import uuid
-    task_id = f"sn_{uuid.uuid4().hex[:12]}"
+    task_id = f"cr_{uuid.uuid4().hex[:12]}"
     _tasks[task_id] = {"id": task_id, "status": "pending", "created_at": time.time(),
-                        "events": [], "result": None}
+                       "events": [], "result": None}
     return task_id
 
 
@@ -68,22 +72,22 @@ def list_tasks(limit: int = 20) -> List[Dict]:
 
 
 # ============================================================
-# 主入口：运行 sn-deep-research 流水线
+# 主入口：运行 cr-agent 流水线
 # ============================================================
 
-def run_sn_deepresearch(
+def run_cr_deepresearch(
     api_key: str,
     company_name: str,
     depth: str = "normal",
     model: Optional[str] = None,
     emit: Optional[Callable[[str, Dict], None]] = None,
 ) -> Dict[str, Any]:
-    """运行基于 sn-deep-research 技能的公司深度分析流水线。
+    """运行 cr_agent 自研公司深度分析流水线。
 
     Args:
         api_key: SenseNova API Key
         company_name: 目标公司名称
-        depth: 研究档位 (quick/normal/heavy)，当前实现统一走 normal 模式
+        depth: 研究档位 (quick/normal/heavy)
         model: 模型名称，默认 sensenova-6.7-flash-lite
         emit: 事件回调 (event_type, data)
 
@@ -109,16 +113,16 @@ def run_sn_deepresearch(
     _emit("task_start", {
         "company": company_name,
         "depth": depth,
-        "mode": "sn-deepresearch",
+        "mode": "cr-agent",
         "model": use_model,
-        "estimated_duration": "约10-30分钟（真实联网调研）",
+        "estimated_duration": "约8-20分钟（真实联网调研）",
     })
 
     # ── 运行流水线 ────────────────────────────────────────────────────────
     try:
         result = controller.run_pipeline(
             query,
-            force_mode="normal",  # 当前实现统一走 normal 模式
+            depth=depth,
             emit=_emit,
         )
     except Exception as e:
@@ -130,11 +134,19 @@ def run_sn_deepresearch(
         _emit("error", {"message": "流水线未产出结果"})
         return _build_error_result(company_name, depth, use_model, "流水线未产出结果", start_time)
 
+    if result.get("error"):
+        _emit("error", {"message": result["error"]})
+        return _build_error_result(company_name, depth, use_model, result["error"], start_time)
+
     # ── 构建执行摘要 ────────────────────────────────────────────────────────
-    all_evidence = result.get("all_evidence", [])
     briefing = result.get("briefing", {})
+    plan = result.get("plan", {})
+    review = result.get("review", {})
+    dim_ids = result.get("dim_ids", [])
+    section_ids = result.get("section_ids", [])
     executive_summary = _build_executive_summary(
-        company_name, depth, use_model, all_evidence, briefing, result.get("elapsed_seconds", 0)
+        company_name, depth, use_model, briefing, plan, review, dim_ids, section_ids,
+        result.get("elapsed_seconds", 0)
     )
 
     # ── 构建 logs（从 pipeline.log 读取） ────────────────────────────────
@@ -154,20 +166,21 @@ def run_sn_deepresearch(
     return {
         "company": company_name,
         "depth": depth,
-        "mode": "sn-deepresearch",
+        "mode": "cr-agent",
         "model": use_model,
         "final_report": final_report,
         "executive_summary": executive_summary,
         "key_metrics": [],
         "logs": logs,
         "total_duration_ms": elapsed_ms,
-        "review": {"final_review": result.get("final_review", ""), "verdict": "pass"},
+        "review": {"final_review": review, "verdict": review.get("verdict", "pass")},
         "fact_check": {},
         "report_dir": result.get("report_dir", ""),
         "report_md_path": result.get("report_md_path", ""),
-        "outline": result.get("outline", {}),
-        "all_evidence": all_evidence,
-        "dim_ids": result.get("dim_ids", []),
+        "briefing": briefing,
+        "plan": plan,
+        "dim_ids": dim_ids,
+        "section_ids": section_ids,
     }
 
 
@@ -183,42 +196,64 @@ def _build_query(company_name: str) -> str:
 
 def _build_executive_summary(
     company_name: str, depth: str, model: str,
-    all_evidence: List[Dict], briefing: Dict, elapsed_seconds: float,
+    briefing: Dict, plan: Dict, review: Dict,
+    dim_ids: List[str], section_ids: List[str], elapsed_seconds: float,
 ) -> str:
     """构建执行摘要。"""
-    dim_count = len(all_evidence)
-    total_claims = sum(len(ev.get("claims", [])) for ev in all_evidence)
-    total_sources = sum(len(ev.get("sources", [])) for ev in all_evidence)
-
-    findings = []
-    for ev in all_evidence:
-        dim_name = ev.get("dimension_name", "")
-        headline = ev.get("headline", "")
-        if headline:
-            findings.append(f"- **{dim_name}**：{headline}")
-
-    findings_text = "\n".join(findings[:5]) if findings else "- 详见完整报告"
+    industry = briefing.get("industry", "未知")
+    company_summary = briefing.get("company_summary", "")
+    listed = briefing.get("listed", "")
+    dims = plan.get("dimensions", [])
+    outline = plan.get("outline", [])
+    verdict = review.get("verdict", "unknown")
+    score = review.get("overall_score", "?")
+    gaps = review.get("gaps", [])
+    suggestions = review.get("suggestions", [])
 
     minutes = int(elapsed_seconds // 60)
     seconds = int(elapsed_seconds % 60)
 
+    dims_text = "\n".join(
+        f"- **{d.get('name', d.get('id',''))}**：{', '.join(d.get('key_questions', [])[:2])}..."
+        for d in dims
+    ) if dims else "- 无维度数据"
+
+    sections_text = "\n".join(
+        f"- {s.get('title', s.get('section_id',''))}"
+        for s in outline
+    ) if outline else "- 无大纲数据"
+
+    gaps_text = "\n".join(f"- {g.get('issue', str(g))}" for g in gaps[:3]) if gaps else "- 无重大缺口"
+    suggestions_text = "\n".join(f"- {s}" for s in suggestions[:3]) if suggestions else "- 无建议"
+
     return f"""# {company_name} 深度研究摘要
 
 **研究档位**：{depth} | **模型**：{model} | **耗时**：{minutes}分{seconds}秒
-**证据规模**：{dim_count} 个维度 / {total_claims} 条断言 / {total_sources} 个来源
+**行业**：{industry} | **上市状态**：{listed}
+**证据规模**：{len(dim_ids)} 个维度成功调研 / {len(section_ids)} 个章节生成
 
-## 核心发现
+## 公司定位
 
-{findings_text}
+{company_summary}
 
-## 维度覆盖
+## 研究维度
 
-""" + "\n".join([
-        f"- **{ev.get('dimension_name', '')}**：{ev.get('headline', '')}"
-        for ev in all_evidence
-    ]) + f"""
+{dims_text}
 
-> 本报告由 SN-DeepResearch 多 Agent 系统自动生成，基于真实联网调研。
+## 报告大纲
+
+{sections_text}
+
+## 质量审查
+
+- **verdict**：{verdict}
+- **overall_score**：{score}
+- **关键缺口**：
+{gaps_text}
+- **改进建议**：
+{suggestions_text}
+
+> 本报告由 cr_agent 自研多 Agent 系统自动生成，基于真实联网调研。
 > 所有数据均可溯源至真实公开来源，无模拟数据。"""
 
 
@@ -260,7 +295,7 @@ def _build_error_result(company_name: str, depth: str, model: str,
     return {
         "company": company_name,
         "depth": depth,
-        "mode": "sn-deepresearch",
+        "mode": "cr-agent",
         "model": model,
         "final_report": "",
         "executive_summary": f"研究失败：{error_msg}",
